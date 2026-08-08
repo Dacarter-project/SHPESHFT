@@ -2,6 +2,18 @@ import type { VectorObject } from '../core/document';
 
 export type Bounds = { x: number; y: number; width: number; height: number };
 
+export function worldToLocal(object: VectorObject, worldX: number, worldY: number) {
+  const dx = worldX - object.transform.x, dy = worldY - object.transform.y;
+  const cos = Math.cos(-object.transform.rotation), sin = Math.sin(-object.transform.rotation);
+  return { x: (dx * cos - dy * sin) / object.transform.scaleX, y: (dx * sin + dy * cos) / object.transform.scaleY };
+}
+
+export function localToWorld(object: VectorObject, localX: number, localY: number) {
+  const x = localX * object.transform.scaleX, y = localY * object.transform.scaleY;
+  const cos = Math.cos(object.transform.rotation), sin = Math.sin(object.transform.rotation);
+  return { x: object.transform.x + x * cos - y * sin, y: object.transform.y + x * sin + y * cos };
+}
+
 export function localBounds(object: VectorObject): Bounds {
   if (object.geometry.kind === 'rect') return { x: 0, y: 0, width: object.geometry.width, height: object.geometry.height };
   if (object.geometry.kind === 'ellipse') return { x: -object.geometry.rx, y: -object.geometry.ry, width: object.geometry.rx * 2, height: object.geometry.ry * 2 };
@@ -30,9 +42,7 @@ export function tracePath(context: CanvasRenderingContext2D, object: VectorObjec
 }
 
 export function hitTest(object: VectorObject, worldX: number, worldY: number): boolean {
-  const { transform } = object;
-  const x = (worldX - transform.x) / transform.scaleX;
-  const y = (worldY - transform.y) / transform.scaleY;
+  const { x, y } = worldToLocal(object, worldX, worldY);
   if (object.geometry.kind === 'ellipse') return (x * x) / (object.geometry.rx ** 2) + (y * y) / (object.geometry.ry ** 2) <= 1;
   const bounds = localBounds(object);
   return x >= bounds.x && x <= bounds.x + bounds.width && y >= bounds.y && y <= bounds.y + bounds.height;

@@ -46,6 +46,23 @@ export class MovePathNodeCommand implements Command {
   }
 }
 
+export class ReplaceObjectsCommand implements Command {
+  readonly label = 'Update objects';
+  constructor(
+    readonly before: Readonly<Record<string, VectorObject | null>>,
+    readonly after: Readonly<Record<string, VectorObject | null>>,
+    readonly beforeOrder: readonly string[],
+    readonly afterOrder: readonly string[]
+  ) {}
+  apply(document: ShpeshftDocument): ShpeshftDocument { return this.set(document, this.after, this.afterOrder); }
+  revert(document: ShpeshftDocument): ShpeshftDocument { return this.set(document, this.before, this.beforeOrder); }
+  private set(document: ShpeshftDocument, changes: Readonly<Record<string, VectorObject | null>>, order: readonly string[]) {
+    const objects = { ...document.objects };
+    for (const [id, object] of Object.entries(changes)) object ? objects[id] = object : delete objects[id];
+    return touch({ ...document, objects, order });
+  }
+}
+
 export class History {
   private undoStack: Command[] = [];
   private redoStack: Command[] = [];
@@ -62,4 +79,5 @@ export class History {
   }
   get canUndo(): boolean { return this.undoStack.length > 0; }
   get canRedo(): boolean { return this.redoStack.length > 0; }
+  clear(): void { this.undoStack = []; this.redoStack = []; }
 }
