@@ -33,4 +33,4 @@ pnpm build
 
 ## Licence
 
-The project owner will select the project licence before the first public release. All current direct dependencies use permissive open-source licences. Project format documentation and user-created artwork will not be restricted by the application licence.
+SHPESHFT source code is licensed under the GNU Affero General Public License v3.0 or later. Publicly served modified versions must make their corresponding source available under the same licence. Project format documentation and user-created artwork are not restricted by the application licence.
