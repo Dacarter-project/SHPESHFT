@@ -1,0 +1,14 @@
+{
+  "name": "SHPESHFT",
+  "short_name": "SHPESHFT",
+  "description": "A touch-first, local-first vector design tool.",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#f4f1ea",
+  "theme_color": "#f4f1ea",
+  "orientation": "any",
+  "icons": [
+    { "src": "/icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any maskable" }
+  ]
+}
