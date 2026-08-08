@@ -1,26 +1,30 @@
 <script lang="ts">
   import { onMount } from 'svelte';
-  import { AddObjectCommand, History, TransformObjectCommand } from './core/commands';
-  import { createDocument, createEllipse, createRectangle, type ShpeshftDocument, type Transform } from './core/document';
-  import { createBenchmarkDocument } from './engine/benchmark';
-  import { hitTest, localBounds } from './engine/geometry';
+  import { AddObjectCommand, History, MovePathNodeCommand, TransformObjectCommand } from './core/commands';
+  import { createBezierPath, createDocument, createEllipse, createRectangle, type PathNode, type ShpeshftDocument, type Transform, type VectorObject } from './core/document';
+  import { createBenchmarkDocument, createPathBenchmarkDocument } from './engine/benchmark';
+  import { hitTest, localBounds, tracePath } from './engine/geometry';
   import { loadLatestProject, saveProject } from './storage/database';
 
   let canvas: HTMLCanvasElement;
   let document: ShpeshftDocument = createDocument();
   let selectedId: string | null = null;
   let view = { x: 0, y: 0, scale: 0.55 };
-  let mode: 'select' | 'pan' = 'select';
+  let mode: 'select' | 'node' | 'pan' = 'select';
   let status = 'Local-first prototype';
   const history = new History();
   const pointers = new Map<number, { x: number; y: number }>();
   let drag: null | { id: string; startWorldX: number; startWorldY: number; before: Transform } = null;
+  let nodeDrag: null | { objectId: string; nodeId: string; part: 'anchor' | 'in' | 'out'; before: PathNode } = null;
+  let selectedNodeId: string | null = null;
   let pan: null | { x: number; y: number; viewX: number; viewY: number } = null;
   let pinch: null | { distance: number; scale: number } = null;
   let frame = 0;
   let saveTimer: number | undefined;
 
-  const execute = (command: AddObjectCommand | TransformObjectCommand) => {
+  let renderMs = 0;
+
+  const execute = (command: AddObjectCommand | TransformObjectCommand | MovePathNodeCommand) => {
     document = history.execute(document, command); scheduleSave(); draw();
   };
 
@@ -35,9 +39,22 @@
 
   function addRect() { execute(new AddObjectCommand(createRectangle(360 + Math.random() * 200, 360 + Math.random() * 200))); }
   function addEllipse() { execute(new AddObjectCommand(createEllipse(450 + Math.random() * 160, 450 + Math.random() * 160))); }
+  function addPath() { const path = createBezierPath(420, 420); execute(new AddObjectCommand(path)); selectedId = path.id; mode = 'node'; draw(); }
   function undo() { document = history.undo(document); selectedId = null; scheduleSave(); draw(); }
   function redo() { document = history.redo(document); selectedId = null; scheduleSave(); draw(); }
   function stress(count: number) { document = createBenchmarkDocument(count); selectedId = null; status = `${count.toLocaleString()} object benchmark`; draw(); }
+  function stressPaths(count: number) { document = createPathBenchmarkDocument(count); selectedId = null; status = `${count.toLocaleString()} curve benchmark`; draw(); }
+
+  function worldToLocal(object: VectorObject, worldX: number, worldY: number) {
+    const dx = worldX - object.transform.x, dy = worldY - object.transform.y;
+    const cos = Math.cos(-object.transform.rotation), sin = Math.sin(-object.transform.rotation);
+    return { x: (dx * cos - dy * sin) / object.transform.scaleX, y: (dx * sin + dy * cos) / object.transform.scaleY };
+  }
+
+  function replaceNode(objectId: string, nodeId: string, update: (node: PathNode) => PathNode) {
+    const object = document.objects[objectId]; if (!object || object.geometry.kind !== 'path') return;
+    document = { ...document, objects: { ...document.objects, [objectId]: { ...object, geometry: { ...object.geometry, nodes: object.geometry.nodes.map((node) => node.id === nodeId ? update(node) : node) } } } };
+  }
 
   function resize() {
     const rect = canvas.getBoundingClientRect();
@@ -48,6 +65,7 @@
 
   function draw() {
     cancelAnimationFrame(frame); frame = requestAnimationFrame(() => {
+      const started = performance.now();
       const ctx = canvas?.getContext('2d'); if (!ctx) return;
       const ratio = Math.min(window.devicePixelRatio || 1, 2);
       const width = canvas.width / ratio, height = canvas.height / ratio;
@@ -63,17 +81,29 @@
         ctx.beginPath();
         if (object.geometry.kind === 'rect') ctx.roundRect(0, 0, object.geometry.width, object.geometry.height, object.geometry.radius);
         else if (object.geometry.kind === 'ellipse') ctx.ellipse(0, 0, object.geometry.rx, object.geometry.ry, 0, 0, Math.PI * 2);
-        else {
-          object.geometry.nodes.forEach((node, index) => index ? ctx.lineTo(node.anchor.x, node.anchor.y) : ctx.moveTo(node.anchor.x, node.anchor.y));
-          if (object.geometry.closed) ctx.closePath();
-        }
+        else tracePath(ctx, object);
         ctx.fill(); if (object.style.stroke) ctx.stroke(); ctx.restore();
         if (id === selectedId) {
-          const bounds = localBounds(object); ctx.save(); ctx.translate(object.transform.x, object.transform.y); ctx.scale(object.transform.scaleX, object.transform.scaleY);
+          const bounds = localBounds(object); ctx.save(); ctx.translate(object.transform.x, object.transform.y); ctx.rotate(object.transform.rotation); ctx.scale(object.transform.scaleX, object.transform.scaleY);
           ctx.strokeStyle = '#2457ff'; ctx.lineWidth = 2 / view.scale; ctx.setLineDash([8 / view.scale, 6 / view.scale]); ctx.strokeRect(bounds.x, bounds.y, bounds.width, bounds.height); ctx.restore();
+          if (mode === 'node' && object.geometry.kind === 'path') {
+            ctx.save(); ctx.translate(object.transform.x, object.transform.y); ctx.rotate(object.transform.rotation); ctx.scale(object.transform.scaleX, object.transform.scaleY);
+            ctx.setLineDash([]); ctx.lineWidth = 1.5 / view.scale; ctx.strokeStyle = '#2457ff';
+            for (const node of object.geometry.nodes) {
+              for (const part of ['in', 'out'] as const) {
+                const handle = node[part]; if (!handle) continue;
+                ctx.beginPath(); ctx.moveTo(node.anchor.x, node.anchor.y); ctx.lineTo(node.anchor.x + handle.x, node.anchor.y + handle.y); ctx.stroke();
+                ctx.beginPath(); ctx.fillStyle = '#fff'; ctx.arc(node.anchor.x + handle.x, node.anchor.y + handle.y, 5 / view.scale, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+              }
+              const size = (node.id === selectedNodeId ? 12 : 9) / view.scale;
+              ctx.fillStyle = node.id === selectedNodeId ? '#2457ff' : '#fff'; ctx.fillRect(node.anchor.x - size / 2, node.anchor.y - size / 2, size, size); ctx.strokeRect(node.anchor.x - size / 2, node.anchor.y - size / 2, size, size);
+            }
+            ctx.restore();
+          }
         }
       }
       ctx.restore();
+      renderMs = performance.now() - started;
     });
   }
 
@@ -85,7 +115,24 @@
     }
     if (mode === 'pan' || event.button === 1) { pan = { x: event.clientX, y: event.clientY, viewX: view.x, viewY: view.y }; return; }
     const rect = canvas.getBoundingClientRect(); const world = screenToWorld(event.clientX - rect.left, event.clientY - rect.top);
+    if (mode === 'node' && selectedId) {
+      const object = document.objects[selectedId];
+      if (object?.geometry.kind === 'path') {
+        const local = worldToLocal(object, world.x, world.y); const radius = 18 / view.scale;
+        for (const node of [...object.geometry.nodes].reverse()) {
+          for (const part of ['in', 'out'] as const) {
+            const handle = node[part]; if (handle && Math.hypot(local.x - node.anchor.x - handle.x, local.y - node.anchor.y - handle.y) <= radius) {
+              selectedNodeId = node.id; nodeDrag = { objectId: object.id, nodeId: node.id, part, before: node }; draw(); return;
+            }
+          }
+          if (Math.hypot(local.x - node.anchor.x, local.y - node.anchor.y) <= radius) {
+            selectedNodeId = node.id; nodeDrag = { objectId: object.id, nodeId: node.id, part: 'anchor', before: node }; draw(); return;
+          }
+        }
+      }
+    }
     selectedId = [...document.order].reverse().find((id) => hitTest(document.objects[id], world.x, world.y)) || null;
+    selectedNodeId = null;
     if (selectedId) drag = { id: selectedId, startWorldX: world.x, startWorldY: world.y, before: document.objects[selectedId].transform };
     draw();
   }
@@ -96,6 +143,11 @@
       const [a, b] = [...pointers.values()]; view = { ...view, scale: Math.max(.12, Math.min(5, pinch.scale * Math.hypot(a.x - b.x, a.y - b.y) / pinch.distance)) }; draw(); return;
     }
     if (pan) { view = { ...view, x: pan.viewX + event.clientX - pan.x, y: pan.viewY + event.clientY - pan.y }; draw(); return; }
+    if (nodeDrag) {
+      const rect = canvas.getBoundingClientRect(); const world = screenToWorld(event.clientX - rect.left, event.clientY - rect.top); const object = document.objects[nodeDrag.objectId]; if (!object) return;
+      const local = worldToLocal(object, world.x, world.y);
+      replaceNode(nodeDrag.objectId, nodeDrag.nodeId, (node) => nodeDrag?.part === 'anchor' ? { ...node, anchor: local } : { ...node, [nodeDrag!.part]: { x: local.x - node.anchor.x, y: local.y - node.anchor.y } }); draw(); return;
+    }
     if (drag) {
       const rect = canvas.getBoundingClientRect(); const world = screenToWorld(event.clientX - rect.left, event.clientY - rect.top);
       const object = document.objects[drag.id]; if (!object) return;
@@ -105,6 +157,13 @@
 
   function pointerUp(event: PointerEvent) {
     pointers.delete(event.pointerId); pinch = null; pan = null;
+    if (nodeDrag) {
+      const object = document.objects[nodeDrag.objectId]; const geometry = object?.geometry; const after = geometry?.kind === 'path' ? geometry.nodes.find((node) => node.id === nodeDrag?.nodeId) : undefined;
+      if (object && after && JSON.stringify(after) !== JSON.stringify(nodeDrag.before)) {
+        const before = nodeDrag.before; replaceNode(nodeDrag.objectId, nodeDrag.nodeId, () => before); execute(new MovePathNodeCommand(nodeDrag.objectId, nodeDrag.nodeId, before, after));
+      }
+      nodeDrag = null;
+    }
     if (drag) {
       const object = document.objects[drag.id]; const changed = object && (object.transform.x !== drag.before.x || object.transform.y !== drag.before.y);
       if (object && changed) {
@@ -131,17 +190,19 @@
 <main>
   <header>
     <div class="brand" aria-label="SHPESHFT"><span class="handle square"></span><b>SHPESHFT</b><span class="line"></span><span class="handle circle"></span></div>
-    <div class="status"><span>{document.order.length.toLocaleString()} objects</span><span>{status}</span></div>
+    <div class="status"><span>{document.order.length.toLocaleString()} objects · {renderMs.toFixed(1)}ms</span><span>{status}</span></div>
   </header>
 
   <section class="workspace-shell">
     <canvas bind:this={canvas} aria-label="SHPESHFT Workspace" on:pointerdown={pointerDown} on:pointermove={pointerMove} on:pointerup={pointerUp} on:pointercancel={pointerUp} on:wheel={wheel}></canvas>
     <nav class="tools" aria-label="Workspace tools">
       <button class:active={mode === 'select'} on:click={() => mode = 'select'} aria-label="Select tool">↖</button>
+      <button class:active={mode === 'node'} on:click={() => mode = 'node'} aria-label="Node tool">⌁</button>
       <button class:active={mode === 'pan'} on:click={() => mode = 'pan'} aria-label="Pan tool">✋</button>
       <span></span>
       <button on:click={addRect} aria-label="Add rectangle">□</button>
       <button on:click={addEllipse} aria-label="Add ellipse">○</button>
+      <button on:click={addPath} aria-label="Add Bezier path">⌁</button>
       <span></span>
       <button on:click={undo} disabled={!history.canUndo} aria-label="Undo">↶</button>
       <button on:click={redo} disabled={!history.canRedo} aria-label="Redo">↷</button>
@@ -149,6 +210,7 @@
     <aside class="benchmark">
       <span>ENGINE TEST</span>
       <button on:click={() => stress(500)}>500</button><button on:click={() => stress(2500)}>2.5K</button><button on:click={() => stress(5000)}>5K</button>
+      <button on:click={() => stressPaths(500)}>500⌁</button>
     </aside>
   </section>
 

@@ -66,6 +66,24 @@ export function createEllipse(x: number, y: number, fill = '#ffc928'): VectorObj
   };
 }
 
+export function createBezierPath(x: number, y: number, fill = '#2457ff'): VectorObject {
+  const node = (anchor: Point, incoming: Point, outgoing: Point): PathNode => ({
+    id: id(), anchor, in: incoming, out: outgoing, kind: 'smooth'
+  });
+  return {
+    id: id(), name: 'Bezier path',
+    geometry: {
+      kind: 'path', closed: true, nodes: [
+        node({ x: 0, y: 70 }, { x: 0, y: 38 }, { x: 0, y: -38 }),
+        node({ x: 90, y: 0 }, { x: -46, y: 0 }, { x: 46, y: 0 }),
+        node({ x: 180, y: 70 }, { x: 0, y: -38 }, { x: 0, y: 38 }),
+        node({ x: 90, y: 150 }, { x: 46, y: 0 }, { x: -46, y: 0 })
+      ]
+    },
+    transform: { ...identityTransform(), x, y }, style: defaultStyle(fill), visible: true, locked: false, parentId: null
+  };
+}
+
 export function assertDocument(value: unknown): asserts value is ShpeshftDocument {
   if (!value || typeof value !== 'object') throw new Error('Project is not an object');
   const doc = value as Partial<ShpeshftDocument>;

@@ -1,4 +1,4 @@
-import type { ShpeshftDocument, Transform, VectorObject } from './document';
+import type { PathNode, ShpeshftDocument, Transform, VectorObject } from './document';
 
 export interface Command {
   readonly label: string;
@@ -30,6 +30,19 @@ export class TransformObjectCommand implements Command {
     const object = document.objects[this.objectId];
     if (!object) return document;
     return touch({ ...document, objects: { ...document.objects, [this.objectId]: { ...object, transform } } });
+  }
+}
+
+export class MovePathNodeCommand implements Command {
+  readonly label = 'Move path node';
+  constructor(readonly objectId: string, readonly nodeId: string, readonly before: PathNode, readonly after: PathNode) {}
+  apply(document: ShpeshftDocument): ShpeshftDocument { return this.set(document, this.after); }
+  revert(document: ShpeshftDocument): ShpeshftDocument { return this.set(document, this.before); }
+  private set(document: ShpeshftDocument, node: PathNode): ShpeshftDocument {
+    const object = document.objects[this.objectId];
+    if (!object || object.geometry.kind !== 'path') return document;
+    const nodes = object.geometry.nodes.map((candidate) => candidate.id === this.nodeId ? node : candidate);
+    return touch({ ...document, objects: { ...document.objects, [this.objectId]: { ...object, geometry: { ...object.geometry, nodes } } } });
   }
 }
 
