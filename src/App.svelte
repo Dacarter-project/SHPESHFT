@@ -12,7 +12,7 @@
   let selectedId: string | null = null;
   let selectedIds: string[] = [];
   let view = { x: 0, y: 0, scale: 0.55 };
-  let mode: 'select' | 'node' | 'pan' = 'select';
+  let mode: 'select' | 'multi' | 'node' | 'pan' = 'select';
   let status = 'Local-first prototype';
   const history = new History();
   const pointers = new Map<number, { x: number; y: number }>();
@@ -157,7 +157,7 @@
     }
     if (mode === 'pan' || event.button === 1) { pan = { x: event.clientX, y: event.clientY, viewX: view.x, viewY: view.y }; return; }
     const rect = canvas.getBoundingClientRect(); const world = screenToWorld(event.clientX - rect.left, event.clientY - rect.top);
-    if (mode === 'select' && selectedId) {
+    if ((mode === 'select' || mode === 'multi') && selectedId) {
       const object = document.objects[selectedId];
       if (object) {
         const bounds = localBounds(object); const radius = 20 / view.scale;
@@ -190,7 +190,7 @@
       }
     }
     const hit = [...document.order].reverse().find((id) => hitTest(document.objects[id], world.x, world.y)) || null;
-    if (event.shiftKey && hit) selectedIds = selectedIds.includes(hit) ? selectedIds.filter((id) => id !== hit) : [...selectedIds, hit];
+    if ((event.shiftKey || mode === 'multi') && hit) selectedIds = selectedIds.includes(hit) ? selectedIds.filter((id) => id !== hit) : [...selectedIds, hit];
     else selectedIds = hit ? [hit] : [];
     selectedId = hit; selectedNodeId = null;
     if (selectedId) drag = { id: selectedId, kind: 'move', startWorldX: world.x, startWorldY: world.y, before: document.objects[selectedId].transform };
@@ -267,6 +267,7 @@
     <nav class="tools" aria-label="Workspace tools">
       <button on:click={newWorkspace} aria-label="New Workspace">＋</button>
       <button class:active={mode === 'select'} on:click={() => mode = 'select'} aria-label="Select tool">↖</button>
+      <button class:active={mode === 'multi'} on:click={() => mode = 'multi'} aria-label="Multi-select tool">⊕</button>
       <button class:active={mode === 'node'} on:click={() => mode = 'node'} aria-label="Node tool">⌁</button>
       <button class:active={mode === 'pan'} on:click={() => mode = 'pan'} aria-label="Pan tool">✋</button>
       <span></span>

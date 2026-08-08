@@ -24,7 +24,7 @@ footer { display: flex; justify-content: center; align-items: center; gap: 8px; 
 .triangle { width: 0; height: 0; border-left: 11px solid transparent; border-right: 11px solid transparent; border-bottom: 20px solid #111; }.bar { width: 8px; height: 20px; background: #111; }
 @media (max-width: 680px) {
   main { grid-template-rows: 62px 1fr 34px; }.brand { min-width: 178px; height: 36px; padding: 0 12px; font-size: 13px; }.status span:last-child { display: none; }
-  header { padding: 10px 12px; }.tools { width: calc(100% - 24px); justify-content: space-around; bottom: 12px; }.tools span { display: none; }
+  header { padding: 10px 12px; }.tools { width: calc(100% - 24px); justify-content: flex-start; bottom: 12px; overflow-x: auto; overscroll-behavior-x: contain; scrollbar-width: none; }.tools::-webkit-scrollbar { display: none; }.tools button { flex: 0 0 44px; }.tools span { display: none; }
   .benchmark { top: 8px; right: 8px; }.benchmark span { display: none; } footer { font-size: 11px; }
   .inspector { top: 8px; left: 8px; width: 210px; }
 }
