@@ -26,6 +26,8 @@
   let resizeAxis: Axis = 'both';
   let styleMode = false;
   let actionsOpen = false;
+  let toolsVisible = true;
+  let helpOpen = false;
   let styleGestureBefore: Record<string, VectorObject> | null = null;
   let debugMode = false;
   let status = 'Ready';
@@ -50,8 +52,8 @@
     saveTimer = window.setTimeout(async () => { await saveProject(snapshot); if (document.updatedAt === snapshot.updatedAt) status = 'Saved'; }, 350);
   }
 
-  function clearSelection() { selectedId = null; selectedIds = []; selectedNodeId = null; selectedSegment = null; editMode = false; multiMode = false; styleMode = false; actionsOpen = false; }
-  function selectAdded(object: VectorObject) { selectedId = object.id; selectedIds = [object.id]; editMode = false; multiMode = false; styleMode = false; draw(); }
+  function clearSelection() { selectedId = null; selectedIds = []; selectedNodeId = null; selectedSegment = null; editMode = false; multiMode = false; styleMode = false; actionsOpen = false; helpOpen = false; }
+  function selectAdded(object: VectorObject) { selectedId = object.id; selectedIds = [object.id]; editMode = false; multiMode = false; styleMode = false; toolsVisible = true; draw(); }
   function addShape(kind: 'triangle' | 'rectangle' | 'ellipse') {
     const x = document.workspace.width / 2 - 90, y = document.workspace.height / 2 - 80;
     const object = kind === 'triangle' ? createTriangle(x, y) : kind === 'rectangle' ? createRectangle(x, y) : createEllipse(x + 90, y + 80);
@@ -77,6 +79,12 @@
   function reorder(direction: -1 | 1) {
     if (!selectedId) return; const from = document.order.indexOf(selectedId), to = Math.max(0, Math.min(document.order.length - 1, from + direction)); if (from === to) return;
     const order = [...document.order]; order.splice(to, 0, order.splice(from, 1)[0]); execute(new ReplaceObjectsCommand({}, {}, document.order, order)); status = direction > 0 ? 'Moved forward' : 'Moved backward';
+  }
+  function rotateSelection() {
+    updateSelected((object) => ({ ...object, transform: transformAround(object, object.transform, objectCenter(object), 1, Math.PI / 2) }), 'Rotated 90°');
+  }
+  function flipSelection() {
+    updateSelected((object) => { const center = objectCenter(object), local = localCenter(object), scaleX = -object.transform.scaleX; return { ...object, transform: { ...object.transform, scaleX, x: center.x - local.x * scaleX } }; }, 'Flipped horizontally');
   }
   function duplicateSelection() {
     if (!selectedIds.length) return; const clones = selectedIds.map((id) => ({ ...structuredClone(document.objects[id]), id: crypto.randomUUID(), name: `${document.objects[id].name} copy`, transform: { ...document.objects[id].transform, x: document.objects[id].transform.x + 28, y: document.objects[id].transform.y + 28 } }));
@@ -178,8 +186,9 @@
       if (guides.length) { ctx.save(); ctx.strokeStyle = '#777'; ctx.lineWidth = 1 / view.scale; ctx.setLineDash([4 / view.scale, 4 / view.scale]); for (const guide of guides) { ctx.beginPath(); if (guide.axis === 'x') { ctx.moveTo(guide.value, 0); ctx.lineTo(guide.value, document.workspace.height); } else { ctx.moveTo(0, guide.value); ctx.lineTo(document.workspace.width, guide.value); } ctx.stroke(); } ctx.restore(); }
       for (const id of document.order) {
         const object = document.objects[id]; if (!object?.visible) continue;
-        ctx.save(); applyObjectTransform(ctx, object); ctx.fillStyle = object.style.fill; ctx.strokeStyle = object.style.strokeColor; ctx.lineWidth = object.style.strokeWidth; ctx.lineCap = object.style.strokeLineCap; ctx.lineJoin = object.style.strokeLineJoin; ctx.miterLimit = object.style.strokeMiterLimit; ctx.setLineDash([...object.style.strokeDashArray]); ctx.beginPath();
+        ctx.save(); applyObjectTransform(ctx, object); ctx.beginPath();
         if (object.geometry.kind === 'rect') ctx.roundRect(0, 0, object.geometry.width, object.geometry.height, object.geometry.radius); else if (object.geometry.kind === 'ellipse') ctx.ellipse(0, 0, object.geometry.rx, object.geometry.ry, 0, 0, Math.PI * 2); else tracePath(ctx, object);
+        ctx.restore(); ctx.save(); ctx.fillStyle = object.style.fill; ctx.strokeStyle = object.style.strokeColor; ctx.lineWidth = object.style.strokeWidth; ctx.lineCap = object.style.strokeLineCap; ctx.lineJoin = object.style.strokeLineJoin; ctx.miterLimit = object.style.strokeMiterLimit; ctx.setLineDash([...object.style.strokeDashArray]);
         if (object.style.fillEnabled) { ctx.globalAlpha = object.style.opacity * object.style.fillOpacity; ctx.fill(); } if (object.style.strokeEnabled) { ctx.globalAlpha = object.style.opacity * object.style.strokeOpacity; ctx.stroke(); } ctx.restore();
         if (!selectedIds.includes(id)) continue;
         const b = localBounds(object); if (selectedIds.length === 1) { const corners = [localToWorld(object,b.x,b.y),localToWorld(object,b.x+b.width,b.y),localToWorld(object,b.x+b.width,b.y+b.height),localToWorld(object,b.x,b.y+b.height)]; ctx.save(); ctx.strokeStyle = '#666'; ctx.lineWidth = 1 / view.scale; ctx.setLineDash([4 / view.scale, 4 / view.scale]); ctx.beginPath(); ctx.moveTo(corners[0].x,corners[0].y); for (const corner of corners.slice(1)) ctx.lineTo(corner.x,corner.y); ctx.closePath(); ctx.stroke(); ctx.restore(); }
@@ -259,8 +268,10 @@
       <nav class="creation-dock" aria-label="Add shapes"><button on:click={() => addShape('triangle')} aria-label="Add triangle">▲</button><button on:click={() => addShape('rectangle')} aria-label="Add rectangle">■</button><button on:click={() => addShape('ellipse')} aria-label="Add ellipse">●</button><i></i><button on:click={() => multiMode = !multiMode} class:active={multiMode} aria-label="Multi-select">⊕</button><button on:click={undo} disabled={!history.canUndo} aria-label="Undo">↶</button><button aria-label="Export SVG" on:click={exportSvg}>SVG</button><button class="more" aria-label="Export project backup" on:click={exportProject}>•••</button></nav>
     {:else if editMode}
       <nav class="context-dock edit-dock" aria-label="Shape Edit controls"><button class="done" on:click={exitEditMode}>Done</button><button on:click={addNode} aria-label="Insert node on selected segment" disabled={!selectedSegment}>＋</button><button on:click={() => setNodeKind('corner')} aria-label="Corner node" disabled={!selectedNodeId}>◆</button><button on:click={() => setNodeKind('smooth')} aria-label="Smooth node" disabled={!selectedNodeId}>⌒</button><button on:click={() => setNodeKind('symmetric')} aria-label="Symmetric node" disabled={!selectedNodeId}>↔</button><button on:click={() => setNodeKind('independent')} aria-label="Independent node" disabled={!selectedNodeId}>◇</button><button on:click={deleteNode} aria-label="Delete node" disabled={!selectedNodeId}>−</button><button on:click={undo} disabled={!history.canUndo} aria-label="Undo">↶</button></nav>
+    {:else if !toolsVisible}
+      <button class="show-tools" on:click={() => toolsVisible = true} aria-label="Show selection tools">Tools</button>
     {:else}
-      <nav class="context-dock" class:style-dock={styleMode} aria-label={styleMode ? 'Fill and Stroke' : 'Object actions'}>
+      <nav class={styleMode ? 'context-dock style-dock' : actionsOpen ? 'context-dock' : 'context-dock object-dock'} aria-label={styleMode ? 'Fill and Stroke' : 'Object actions'}>
         {#if styleMode && selectedIds.length === 1}
           <button class="done" on:click={() => styleMode = false}>Done</button>
           <label class="toggle"><input type="checkbox" checked={document.objects[selectedId]?.style.fillEnabled} on:change={(event) => setStyle({ fillEnabled: event.currentTarget.checked }, event.currentTarget.checked ? 'Fill on' : 'Fill off')} />Fill</label>
@@ -283,13 +294,19 @@
           {#if booleanCompatible()}<button on:click={() => booleanSelection('union')}>Combine</button><button on:click={() => booleanSelection('difference')}>Cut Out</button><button on:click={() => booleanSelection('intersect')}>Intersect</button>{/if}
           {#if groupedSelection()}<button on:click={ungroupSelection}>Ungroup</button>{/if}
         {:else}
-          <button on:click={duplicateSelection} aria-label="Duplicate">Duplicate</button><button on:click={deleteSelection} aria-label="Delete">Delete</button><button on:click={() => reorder(-1)} aria-label="Move backward">Back</button><button on:click={() => reorder(1)} aria-label="Move forward">Front</button>
-          <label>Opacity <input aria-label="Opacity" type="range" min=".05" max="1" step=".05" value={document.objects[selectedId]?.style.opacity ?? 1} on:change={(event) => setOpacity(Number(event.currentTarget.value))} /></label>
-          {#if selectedIds.length === 1}<button on:click={() => styleMode = true}>Style</button>{/if}
-          {#if multiMode}<button class="done" on:click={() => { multiMode = false; status = 'Selection'; }}>Done</button>{:else}<button on:click={() => multiMode = true} aria-label="Add to selection">⊕ Select</button>{/if}
+          <button class="tool-button" on:click={() => { toolsVisible=false; helpOpen=false; }} aria-label="Hide selection tools"><span>—</span><small>Hide</small></button>
+          <button class="tool-button" class:active={helpOpen} on:click={() => helpOpen=!helpOpen} aria-label="Selection help"><span>?</span><small>Help</small></button>
+          <button class="tool-button" on:click={flipSelection} aria-label="Mirror or flip horizontally"><span>◫</span><small>Flip</small></button>
+          <button class="tool-button" on:click={deleteSelection} aria-label="Delete"><span>×</span><small>Delete</small></button>
+          <button class="tool-button" on:click={duplicateSelection} aria-label="Duplicate"><span>▣</span><small>Duplicate</small></button>
+          <button class="tool-button" on:click={rotateSelection} aria-label="Rotate 90 degrees"><span>↻</span><small>Rotate</small></button>
+          <div class="layer-tools" aria-label="Layer order"><button on:click={() => reorder(1)} aria-label="Move forward"><span>▰</span><small>Front</small></button><button on:click={() => reorder(-1)} aria-label="Move backward"><span>▱</span><small>Back</small></button></div>
+          {#if selectedIds.length === 1}<button class="tool-button" on:click={() => styleMode = true} aria-label="Fill and stroke"><span>◐</span><small>Style</small></button>{/if}
+          {#if multiMode}<button class="tool-button active" on:click={() => { multiMode = false; status = 'Selection'; }}><span>✓</span><small>Done</small></button>{:else}<button class="tool-button" on:click={() => multiMode = true} aria-label="Add to selection"><span>⊕</span><small>Select</small></button>{/if}
         {/if}
         {/if}
       </nav>
+      {#if helpOpen}<aside class="selection-help"><strong>Selection tools</strong><span>Drag the shape to move it. Use the four corner controls to resize, edit nodes, open shape operations, or freely rotate and scale.</span></aside>{/if}
     {/if}
 
     {#if debugMode}<aside class="benchmark"><span>{document.order.length.toLocaleString()} · {renderMs.toFixed(1)}ms</span><button on:click={() => stress('500')}>500</button><button on:click={() => stress('2500')}>2.5K</button><button on:click={() => stress('5000')}>5K</button><button on:click={() => stress('curves')}>500⌁</button><button on:click={() => stress('nodes')}>1K nodes</button></aside>{/if}
