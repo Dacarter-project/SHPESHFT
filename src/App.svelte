@@ -4,7 +4,7 @@
   import { createDocument, createEllipse, createRectangle, createTriangle, type PathNode, type ShpeshftDocument, type Transform, type VectorObject } from './core/document';
   import { unionRectangles } from './engine/boolean';
   import { createBenchmarkDocument, createNodeBenchmarkDocument, createPathBenchmarkDocument } from './engine/benchmark';
-  import { hitTest, localBounds, localToWorld, tracePath, worldToLocal } from './engine/geometry';
+  import { hitTest, localBounds, localCenter, localToWorld, objectCenter, tracePath, worldToLocal } from './engine/geometry';
   import { fitWorkspace, zoomAt, zoomFromAnchor } from './engine/viewport';
   import { loadLatestProject, saveProject } from './storage/database';
 
@@ -132,6 +132,11 @@
   }
   function snapped(angle: number) { const step = Math.PI / 12, target = Math.round(angle / step) * step; return Math.abs(target - angle) < Math.PI / 45 ? target : angle; }
 
+  function applyObjectTransform(ctx: CanvasRenderingContext2D, object: VectorObject) {
+    const center = localCenter(object), worldCenter = objectCenter(object);
+    ctx.translate(worldCenter.x, worldCenter.y); ctx.rotate(object.transform.rotation); ctx.scale(object.transform.scaleX, object.transform.scaleY); ctx.translate(-center.x, -center.y);
+  }
+
   function draw() {
     cancelAnimationFrame(frame); frame = requestAnimationFrame(() => {
       const started = performance.now(), ctx = canvas?.getContext('2d'); if (!ctx) return;
@@ -140,14 +145,14 @@
       ctx.save(); ctx.translate(view.x, view.y); ctx.scale(view.scale, view.scale); ctx.fillStyle = document.workspace.background; ctx.shadowColor = 'rgba(0,0,0,.15)'; ctx.shadowBlur = 28 / view.scale; ctx.fillRect(0, 0, document.workspace.width, document.workspace.height); ctx.shadowColor = 'transparent';
       for (const id of document.order) {
         const object = document.objects[id]; if (!object?.visible) continue;
-        ctx.save(); ctx.translate(object.transform.x, object.transform.y); ctx.rotate(object.transform.rotation); ctx.scale(object.transform.scaleX, object.transform.scaleY); ctx.globalAlpha = object.style.opacity; ctx.fillStyle = object.style.fill; ctx.strokeStyle = object.style.stroke || 'transparent'; ctx.lineWidth = object.style.strokeWidth; ctx.beginPath();
+        ctx.save(); applyObjectTransform(ctx, object); ctx.globalAlpha = object.style.opacity; ctx.fillStyle = object.style.fill; ctx.strokeStyle = object.style.stroke || 'transparent'; ctx.lineWidth = object.style.strokeWidth; ctx.beginPath();
         if (object.geometry.kind === 'rect') ctx.roundRect(0, 0, object.geometry.width, object.geometry.height, object.geometry.radius); else if (object.geometry.kind === 'ellipse') ctx.ellipse(0, 0, object.geometry.rx, object.geometry.ry, 0, 0, Math.PI * 2); else tracePath(ctx, object);
         ctx.fill(); if (object.style.stroke) ctx.stroke(); ctx.restore();
         if (!selectedIds.includes(id)) continue;
-        const b = localBounds(object); ctx.save(); ctx.translate(object.transform.x, object.transform.y); ctx.rotate(object.transform.rotation); ctx.scale(object.transform.scaleX, object.transform.scaleY); ctx.strokeStyle = '#2457ff'; ctx.lineWidth = 1.5 / view.scale; ctx.setLineDash([6 / view.scale, 5 / view.scale]); ctx.strokeRect(b.x, b.y, b.width, b.height); ctx.restore();
+        const b = localBounds(object); ctx.save(); applyObjectTransform(ctx, object); ctx.strokeStyle = '#2457ff'; ctx.lineWidth = 1.5 / view.scale; ctx.setLineDash([6 / view.scale, 5 / view.scale]); ctx.strokeRect(b.x, b.y, b.width, b.height); ctx.restore();
         if (!editMode && id === selectedId) { const handle = primaryHandle(object); ctx.save(); ctx.setLineDash([]); ctx.lineWidth = 3 / view.scale; ctx.fillStyle = '#111'; ctx.strokeStyle = '#fff'; ctx.beginPath(); ctx.arc(handle.x, handle.y, 15 / view.scale, 0, Math.PI * 2); ctx.fill(); ctx.stroke(); ctx.fillStyle = '#fff'; ctx.beginPath(); ctx.arc(handle.x, handle.y, 4 / view.scale, 0, Math.PI * 2); ctx.fill(); ctx.restore(); }
         if (editMode && id === selectedId && object.geometry.kind === 'path') {
-          ctx.save(); ctx.translate(object.transform.x, object.transform.y); ctx.rotate(object.transform.rotation); ctx.scale(object.transform.scaleX, object.transform.scaleY); ctx.setLineDash([]); ctx.lineWidth = 1.5 / view.scale; ctx.strokeStyle = '#2457ff';
+          ctx.save(); applyObjectTransform(ctx, object); ctx.setLineDash([]); ctx.lineWidth = 1.5 / view.scale; ctx.strokeStyle = '#2457ff';
           for (const node of object.geometry.nodes) {
             if (node.id === selectedNodeId) for (const part of ['in', 'out'] as const) { const h = node[part]; if (!h) continue; ctx.beginPath(); ctx.moveTo(node.anchor.x, node.anchor.y); ctx.lineTo(node.anchor.x + h.x, node.anchor.y + h.y); ctx.stroke(); ctx.fillStyle = '#fff'; ctx.beginPath(); ctx.arc(node.anchor.x + h.x, node.anchor.y + h.y, 5 / view.scale, 0, Math.PI * 2); ctx.fill(); ctx.stroke(); }
             const size = (node.id === selectedNodeId ? 13 : 9) / view.scale; ctx.fillStyle = node.id === selectedNodeId ? '#2457ff' : '#fff'; ctx.fillRect(node.anchor.x - size / 2, node.anchor.y - size / 2, size, size); ctx.strokeRect(node.anchor.x - size / 2, node.anchor.y - size / 2, size, size);
@@ -169,7 +174,7 @@
         for (const node of [...object.geometry.nodes].reverse()) { if (node.id === selectedNodeId) for (const part of ['in', 'out'] as const) { const h = node[part]; if (h && Math.hypot(local.x - node.anchor.x - h.x, local.y - node.anchor.y - h.y) <= radius) { nodeDrag = { objectId: object.id, nodeId: node.id, part, before: node }; return; } } if (Math.hypot(local.x - node.anchor.x, local.y - node.anchor.y) <= radius) { selectedNodeId = node.id; nodeDrag = { objectId: object.id, nodeId: node.id, part: 'anchor', before: node }; draw(); return; } }
       }
     }
-    if (!editMode && selectedId) { const object = document.objects[selectedId], handle = primaryHandle(object); if (Math.hypot(world.x - handle.x, world.y - handle.y) <= 30 / view.scale) { const origin = { x: object.transform.x, y: object.transform.y }; drag = { id: selectedId, kind: 'primary', before: object.transform, startWorldX: world.x, startWorldY: world.y, startDistance: Math.max(1, Math.hypot(world.x - origin.x, world.y - origin.y)), startAngle: Math.atan2(world.y - origin.y, world.x - origin.x), axis: resizeAxis }; return; } }
+    if (!editMode && selectedId) { const object = document.objects[selectedId], handle = primaryHandle(object); if (Math.hypot(world.x - handle.x, world.y - handle.y) <= 30 / view.scale) { const origin = objectCenter(object); drag = { id: selectedId, kind: 'primary', before: object.transform, startWorldX: world.x, startWorldY: world.y, startDistance: Math.max(1, Math.hypot(world.x - origin.x, world.y - origin.y)), startAngle: Math.atan2(world.y - origin.y, world.x - origin.x), axis: resizeAxis }; return; } }
     const hit = [...document.order].reverse().find((id) => hitTest(document.objects[id], world.x, world.y)) ?? null;
     if (hit) { if (multiMode || event.shiftKey) selectedIds = selectedIds.includes(hit) ? selectedIds.filter((id) => id !== hit) : [...selectedIds, hit]; else selectedIds = [hit]; selectedId = hit; selectedNodeId = null; drag = { id: hit, kind: 'move', before: document.objects[hit].transform, startWorldX: world.x, startWorldY: world.y }; draw(); }
     else { clearSelection(); pan = { x: event.clientX, y: event.clientY, viewX: view.x, viewY: view.y }; draw(); }
@@ -182,7 +187,7 @@
     if (nodeDrag) { const object = document.objects[nodeDrag.objectId], local = worldToLocal(object, world.x, world.y); replaceNode(nodeDrag.objectId, nodeDrag.nodeId, (node) => nodeDrag?.part === 'anchor' ? { ...node, anchor: local } : { ...node, [nodeDrag!.part]: { x: local.x - node.anchor.x, y: local.y - node.anchor.y } }); draw(); return; }
     if (drag) { const object = document.objects[drag.id]; let transform: Transform;
       if (drag.kind === 'move') transform = { ...drag.before, x: drag.before.x + world.x - drag.startWorldX, y: drag.before.y + world.y - drag.startWorldY };
-      else { const dx = world.x - drag.before.x, dy = world.y - drag.before.y, factor = Math.max(.08, Math.hypot(dx, dy) / (drag.startDistance ?? 1)), angle = snapped(drag.before.rotation + Math.atan2(dy, dx) - (drag.startAngle ?? 0)); transform = { ...drag.before, rotation: drag.axis === 'both' ? angle : drag.before.rotation, scaleX: drag.axis === 'height' ? drag.before.scaleX : drag.before.scaleX * factor, scaleY: drag.axis === 'width' ? drag.before.scaleY : drag.before.scaleY * factor }; }
+      else { const beforeObject = { ...object, transform: drag.before }, center = objectCenter(beforeObject), local = localCenter(beforeObject), dx = world.x - center.x, dy = world.y - center.y, factor = Math.max(.08, Math.hypot(dx, dy) / (drag.startDistance ?? 1)), angle = snapped(drag.before.rotation + Math.atan2(dy, dx) - (drag.startAngle ?? 0)); const scaleX = drag.axis === 'height' ? drag.before.scaleX : drag.before.scaleX * factor, scaleY = drag.axis === 'width' ? drag.before.scaleY : drag.before.scaleY * factor; transform = { ...drag.before, x: center.x - local.x * scaleX, y: center.y - local.y * scaleY, rotation: drag.axis === 'both' ? angle : drag.before.rotation, scaleX, scaleY }; }
       document = { ...document, objects: { ...document.objects, [drag.id]: { ...object, transform } } }; draw();
     }
   }

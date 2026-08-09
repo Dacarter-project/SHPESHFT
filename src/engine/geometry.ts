@@ -2,16 +2,32 @@ import type { VectorObject } from '../core/document';
 
 export type Bounds = { x: number; y: number; width: number; height: number };
 
+export function localCenter(object: VectorObject) {
+  const bounds = localBounds(object);
+  return { x: bounds.x + bounds.width / 2, y: bounds.y + bounds.height / 2 };
+}
+
+/** The transform position remains the unrotated local origin for project compatibility. */
+export function objectCenter(object: VectorObject) {
+  const center = localCenter(object);
+  return {
+    x: object.transform.x + center.x * object.transform.scaleX,
+    y: object.transform.y + center.y * object.transform.scaleY
+  };
+}
+
 export function worldToLocal(object: VectorObject, worldX: number, worldY: number) {
-  const dx = worldX - object.transform.x, dy = worldY - object.transform.y;
+  const center = localCenter(object), worldCenter = objectCenter(object);
+  const dx = worldX - worldCenter.x, dy = worldY - worldCenter.y;
   const cos = Math.cos(-object.transform.rotation), sin = Math.sin(-object.transform.rotation);
-  return { x: (dx * cos - dy * sin) / object.transform.scaleX, y: (dx * sin + dy * cos) / object.transform.scaleY };
+  return { x: center.x + (dx * cos - dy * sin) / object.transform.scaleX, y: center.y + (dx * sin + dy * cos) / object.transform.scaleY };
 }
 
 export function localToWorld(object: VectorObject, localX: number, localY: number) {
-  const x = localX * object.transform.scaleX, y = localY * object.transform.scaleY;
+  const center = localCenter(object), worldCenter = objectCenter(object);
+  const x = (localX - center.x) * object.transform.scaleX, y = (localY - center.y) * object.transform.scaleY;
   const cos = Math.cos(object.transform.rotation), sin = Math.sin(object.transform.rotation);
-  return { x: object.transform.x + x * cos - y * sin, y: object.transform.y + x * sin + y * cos };
+  return { x: worldCenter.x + x * cos - y * sin, y: worldCenter.y + x * sin + y * cos };
 }
 
 export function localBounds(object: VectorObject): Bounds {
