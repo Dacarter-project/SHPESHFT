@@ -208,7 +208,11 @@
 <svelte:window on:keydown={(event) => { if ((event.metaKey || event.ctrlKey) && event.key === 'z') event.shiftKey ? redo() : undo(); if (event.key === 'Escape') editMode ? exitEditMode() : clearSelection(); if ((event.key === 'Backspace' || event.key === 'Delete') && !editMode) deleteSelection(); }} />
 
 <main>
-  <header><div class="brand" aria-label="SHPESHFT"><img src="/assets/shpeshft-logo.png" alt="SHPESHFT" /></div><span class="save-state">{status}</span></header>
+  <header>
+    <span class="save-state">{status}</span>
+    <div class="brand" aria-label="SHPESHFT"><img src="/assets/shpeshft-logo.png" alt="SHPESHFT" /></div>
+    <button class="new-workspace" on:click={newWorkspace} aria-label="New Workspace">＋</button>
+  </header>
   <section class="workspace-shell">
     <canvas bind:this={canvas} aria-label="SHPESHFT Workspace" on:pointerdown={pointerDown} on:pointermove={pointerMove} on:pointerup={pointerUp} on:pointercancel={pointerUp} on:wheel={wheel}></canvas>
 
@@ -230,7 +234,6 @@
     {/if}
 
     {#if debugMode}<aside class="benchmark"><span>{document.order.length.toLocaleString()} · {renderMs.toFixed(1)}ms</span><button on:click={() => stress('500')}>500</button><button on:click={() => stress('2500')}>2.5K</button><button on:click={() => stress('5000')}>5K</button><button on:click={() => stress('curves')}>500⌁</button><button on:click={() => stress('nodes')}>1K nodes</button></aside>{/if}
-    <button class="new-workspace" on:click={newWorkspace} aria-label="New Workspace">＋</button>
   </section>
   <footer><span>Taking</span><i class="triangle"></i><i class="bar"></i><span>out of design</span></footer>
 </main>

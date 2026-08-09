@@ -3,11 +3,11 @@
 html, body, #app { margin: 0; width: 100%; height: 100%; overflow: hidden; overscroll-behavior: none; }
 button, input { font: inherit; color: inherit; }
 button { -webkit-tap-highlight-color: transparent; }
-main { height: 100%; display: grid; grid-template-rows: 66px 1fr 38px; padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left); }
-header { display: flex; align-items: center; justify-content: space-between; padding: 10px 18px; gap: 14px; }
-.brand { width: 238px; height: 46px; display: flex; align-items: center; }
+main { height: 100%; display: grid; grid-template-rows: 60px 1fr 38px; padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left); }
+header { display: grid; grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr); align-items: center; padding: 7px 18px; gap: 14px; }
+.brand { grid-column: 2; width: 196px; height: 40px; display: flex; align-items: center; }
 .brand img { display: block; width: 100%; height: 100%; object-fit: contain; mix-blend-mode: multiply; }
-.save-state { color: #666; font-size: 10px; text-transform: uppercase; letter-spacing: .1em; }
+.save-state { grid-column: 1; grid-row: 1; min-width: 0; color: #666; font-size: 10px; text-transform: uppercase; letter-spacing: .1em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .workspace-shell { min-height: 0; position: relative; overflow: hidden; border-block: 1px solid #bdbab3; }
 canvas { width: 100%; height: 100%; display: block; touch-action: none; cursor: default; }
 .creation-dock, .context-dock { position: absolute; z-index: 3; left: 50%; bottom: max(14px, env(safe-area-inset-bottom)); transform: translateX(-50%); display: flex; align-items: center; gap: 5px; max-width: calc(100% - 24px); padding: 6px; background: rgba(244,241,234,.96); border: 2px solid #111; box-shadow: 4px 4px 0 #111; overflow-x: auto; scrollbar-width: none; }
@@ -19,13 +19,14 @@ canvas { width: 100%; height: 100%; display: block; touch-action: none; cursor: 
 .axis { flex: 0 0 auto; display: flex; align-items: center; gap: 2px; padding: 2px; border: 1px solid #aaa; }.axis button { min-height: 40px; min-width: auto; padding-inline: 10px; }
 .edit-dock .done { color: #fff; background: #111; padding-inline: 18px; }
 .edit-shape { position: absolute; z-index: 4; transform: translate(-45%, -115%); width: 48px; height: 48px; border-radius: 50%; border: 2px solid #111; background: #f4f1ea; box-shadow: 2px 2px 0 #111; font-size: 22px; }
-.new-workspace { position: absolute; z-index: 2; top: 10px; left: 10px; width: 44px; height: 44px; border: 1px solid #111; background: rgba(244,241,234,.92); font-size: 22px; }
+.new-workspace { grid-column: 3; grid-row: 1; justify-self: end; width: 40px; height: 40px; padding: 0; border: 1px solid #111; background: transparent; font-size: 21px; line-height: 1; }
+.new-workspace:hover, .new-workspace:focus-visible { color: #fff; background: #111; }
 .benchmark { position: absolute; z-index: 5; top: 10px; right: 10px; display: flex; align-items: center; gap: 2px; background: #111; color: #fff; padding: 4px; }.benchmark span { padding: 0 7px; font-size: 10px; }.benchmark button { min-height: 34px; border: 0; background: #fff; color: #111; font-size: 11px; font-weight: 700; }
 footer { display: flex; justify-content: center; align-items: center; gap: 7px; font-size: 12px; letter-spacing: .04em; }.triangle { width: 0; height: 0; border-left: 10px solid transparent; border-right: 10px solid transparent; border-bottom: 18px solid #111; }.bar { width: 7px; height: 18px; background: #111; }
 @media (max-width: 680px) {
-  main { grid-template-rows: 56px 1fr 28px; }.brand { width: 178px; height: 42px; }.save-state { max-width: 120px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  header { padding: 9px 11px; }.creation-dock, .context-dock { left: 10px; right: 10px; transform: none; max-width: none; bottom: 10px; }.creation-dock { justify-content: space-around; }.context-dock { padding-right: 10px; }
+  main { grid-template-rows: 52px 1fr 28px; }.brand { width: 148px; height: 34px; }.save-state { max-width: 72px; font-size: 8px; }
+  header { padding: 6px 10px; gap: 7px; }.new-workspace { width: 38px; height: 38px; }.creation-dock, .context-dock { left: 10px; right: 10px; transform: none; max-width: none; bottom: 10px; }.creation-dock { justify-content: space-around; }.context-dock { padding-right: 10px; }
   .creation-dock button, .context-dock button { min-width: 48px; min-height: 48px; }.context-dock label { flex-basis: 155px; }.axis button { min-width: auto; }
-  .new-workspace { top: 8px; left: 8px; }.benchmark { top: 8px; max-width: calc(100% - 16px); overflow-x: auto; }
+  .benchmark { top: 8px; max-width: calc(100% - 16px); overflow-x: auto; }
   footer { font-size: 10px; }
 }
