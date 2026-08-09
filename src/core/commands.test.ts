@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { AddObjectCommand, History, MovePathNodeCommand, TransformObjectCommand } from './commands';
-import { createBezierPath, createDocument, createRectangle } from './document';
+import { createBezierPath, createDocument, createRectangle, createTriangle } from './document';
 import { deserialize, serialize } from './serialize';
 
 describe('document commands', () => {
@@ -48,5 +48,13 @@ describe('document commands', () => {
     geometry = doc.objects[path.id].geometry;
     if (geometry.kind !== 'path') throw new Error('Expected restored path');
     expect(geometry.nodes[0].anchor).toEqual(before.anchor);
+  });
+
+  it('creates a triangle as an immediately editable path', () => {
+    const triangle = createTriangle(100, 120);
+    expect(triangle.geometry.kind).toBe('path');
+    if (triangle.geometry.kind !== 'path') throw new Error('Expected path');
+    expect(triangle.geometry.nodes).toHaveLength(3);
+    expect(triangle.geometry.nodes.every((node) => node.kind === 'corner')).toBe(true);
   });
 });

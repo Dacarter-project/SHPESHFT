@@ -84,6 +84,14 @@ export function createBezierPath(x: number, y: number, fill = '#2457ff'): Vector
   };
 }
 
+export function createTriangle(x: number, y: number, fill = '#ff5a36'): VectorObject {
+  const node = (anchor: Point): PathNode => ({ id: id(), anchor, in: null, out: null, kind: 'corner' });
+  return {
+    id: id(), name: 'Triangle', geometry: { kind: 'path', closed: true, nodes: [node({ x: 90, y: 0 }), node({ x: 180, y: 160 }), node({ x: 0, y: 160 })] },
+    transform: { ...identityTransform(), x, y }, style: defaultStyle(fill), visible: true, locked: false, parentId: null
+  };
+}
+
 export function assertDocument(value: unknown): asserts value is ShpeshftDocument {
   if (!value || typeof value !== 'object') throw new Error('Project is not an object');
   const doc = value as Partial<ShpeshftDocument>;
