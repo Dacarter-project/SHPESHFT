@@ -7,7 +7,7 @@ export type Style = Readonly<{ fill: string; stroke: string | null; strokeWidth:
 
 export type RectGeometry = Readonly<{ kind: 'rect'; width: number; height: number; radius: number }>;
 export type EllipseGeometry = Readonly<{ kind: 'ellipse'; rx: number; ry: number }>;
-export type PathNode = Readonly<{ id: string; anchor: Point; in: Point | null; out: Point | null; kind: 'corner' | 'smooth' | 'symmetric' }>;
+export type PathNode = Readonly<{ id: string; anchor: Point; in: Point | null; out: Point | null; kind: 'corner' | 'smooth' | 'symmetric' | 'independent' }>;
 export type PathGeometry = Readonly<{ kind: 'path'; closed: boolean; nodes: readonly PathNode[] }>;
 export type Geometry = RectGeometry | EllipseGeometry | PathGeometry;
 

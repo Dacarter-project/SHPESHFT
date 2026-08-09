@@ -5,8 +5,10 @@ type Edge = { from: [number, number]; to: [number, number] };
 
 const key = ([x, y]: [number, number]) => `${x},${y}`;
 
-/** Exact union for two or more unrotated rectangles, committed as editable path geometry. */
-export function unionRectangles(objects: readonly VectorObject[]): VectorObject | null {
+export type BooleanOperation = 'union' | 'difference' | 'intersect';
+
+/** Exact Boolean geometry for compatible unrotated rectangles, committed as an editable outline. */
+export function booleanRectangles(objects: readonly VectorObject[], operation: BooleanOperation): VectorObject | null {
   if (objects.length < 2 || objects.some((object) => object.geometry.kind !== 'rect' || object.transform.rotation !== 0)) return null;
   const rectangles = objects.map((object) => {
     if (object.geometry.kind !== 'rect') throw new Error('Expected rectangle');
@@ -19,7 +21,9 @@ export function unionRectangles(objects: readonly VectorObject[]): VectorObject 
   for (let y = 0; y < ys.length - 1; y += 1) for (let x = 0; x < xs.length - 1; x += 1) {
     const cell = { x0: xs[x], x1: xs[x + 1], y0: ys[y], y1: ys[y + 1] };
     const cx = (cell.x0 + cell.x1) / 2, cy = (cell.y0 + cell.y1) / 2;
-    if (rectangles.some((rect) => cx >= rect.x0 && cx <= rect.x1 && cy >= rect.y0 && cy <= rect.y1)) { filled.add(`${x}:${y}`); cells.push(cell); }
+    const inside = rectangles.map((rect) => cx >= rect.x0 && cx <= rect.x1 && cy >= rect.y0 && cy <= rect.y1);
+    const include = operation === 'union' ? inside.some(Boolean) : operation === 'intersect' ? inside.every(Boolean) : inside[0] && !inside.slice(1).some(Boolean);
+    if (include) { filled.add(`${x}:${y}`); cells.push(cell); }
   }
   const edges: Edge[] = [];
   for (let y = 0; y < ys.length - 1; y += 1) for (let x = 0; x < xs.length - 1; x += 1) if (filled.has(`${x}:${y}`)) {
@@ -42,7 +46,9 @@ export function unionRectangles(objects: readonly VectorObject[]): VectorObject 
   });
   const nodes: PathNode[] = corners.map(([x, y]) => ({ id: crypto.randomUUID(), anchor: { x, y }, in: null, out: null, kind: 'corner' }));
   return {
-    id: crypto.randomUUID(), name: 'Union', geometry: { kind: 'path', closed: true, nodes }, transform: identityTransform(),
+    id: crypto.randomUUID(), name: operation === 'union' ? 'Combine' : operation === 'difference' ? 'Cut Out' : 'Intersect', geometry: { kind: 'path', closed: true, nodes }, transform: identityTransform(),
     style: defaultStyle(objects[0].style.fill), visible: true, locked: false, parentId: null
   };
 }
+
+export const unionRectangles = (objects: readonly VectorObject[]) => booleanRectangles(objects, 'union');
