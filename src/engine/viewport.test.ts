@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { fitWorkspace, zoomAt, zoomFromAnchor } from './viewport';
+import { createTriangle } from '../core/document';
 
 describe('viewport', () => {
   it('centres the Workspace with pasteboard on every side', () => {
@@ -15,5 +16,12 @@ describe('viewport', () => {
 
   it('keeps a pinch world anchor beneath the moving midpoint', () => {
     expect(zoomFromAnchor({ x: 200, y: 300 }, { x: 250, y: 350 }, 2)).toEqual({ x: -150, y: -250, scale: 2 });
+  });
+  it('keeps document geometry immutable during repeated workspace navigation', () => {
+    const triangle = createTriangle(120, 240), snapshot = structuredClone(triangle);
+    let view = fitWorkspace(390, 760, 1080, 1080);
+    for (const scale of [.4, 2, 4, .75]) view = zoomAt(view, { x: 190, y: 380 }, scale);
+    view = zoomFromAnchor({ x: 500, y: 500 }, { x: 230, y: 410 }, view.scale);
+    expect(triangle).toEqual(snapshot);
   });
 });

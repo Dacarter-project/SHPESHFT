@@ -1,0 +1,5 @@
+import {describe,expect,it} from 'vitest';
+import {createTriangle} from '../core/document';
+import {objectCenter} from './geometry';
+import {transformAround} from './transform';
+describe('world-centred selection transforms',()=>{it('keeps the pivot fixed while scaling and rotating',()=>{const object=createTriangle(400,260),pivot=objectCenter(object),after=transformAround(object,object.transform,pivot,2,Math.PI/4),changed={...object,transform:after};expect(objectCenter(changed).x).toBeCloseTo(pivot.x);expect(objectCenter(changed).y).toBeCloseTo(pivot.y);expect(after.rotation).toBeCloseTo(Math.PI/4);expect(after.scaleX).toBeCloseTo(2);});it('adds rotation deltas to an already rotated object without jumping',()=>{const object=createTriangle(20,40),first={...object.transform,rotation:Math.PI/4},pivot=objectCenter({...object,transform:first}),second=transformAround(object,first,pivot,1,Math.PI/6);expect(second.rotation).toBeCloseTo(Math.PI*5/12);expect(objectCenter({...object,transform:second})).toEqual(pivot);});});

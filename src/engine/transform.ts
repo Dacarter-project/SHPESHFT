@@ -1,0 +1,3 @@
+import type { Transform,VectorObject } from '../core/document';
+import { localCenter,objectCenter } from './geometry';
+export function transformAround(object:VectorObject,before:Transform,pivot:{x:number;y:number},scale:number,rotationDelta:number):Transform{const source={...object,transform:before},center=objectCenter(source),local=localCenter(source),dx=center.x-pivot.x,dy=center.y-pivot.y,cos=Math.cos(rotationDelta),sin=Math.sin(rotationDelta),nextCenter={x:pivot.x+(dx*cos-dy*sin)*scale,y:pivot.y+(dx*sin+dy*cos)*scale},scaleX=before.scaleX*scale,scaleY=before.scaleY*scale;return{...before,x:nextCenter.x-local.x*scaleX,y:nextCenter.y-local.y*scaleY,scaleX,scaleY,rotation:before.rotation+rotationDelta};}
