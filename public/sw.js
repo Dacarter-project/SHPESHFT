@@ -1,5 +1,5 @@
-const CACHE = 'shpeshft-shell-v3';
-const SHELL = ['/', '/index.html', '/manifest.webmanifest', '/favicon-32.png', '/apple-touch-icon.png', '/icon-192.png', '/icon-512.png', '/assets/shpeshft-logo.png'];
+const CACHE = 'shpeshft-shell-v4';
+const SHELL = ['/', '/index.html', '/manifest.json', '/favicon-32.png', '/apple-touch-icon.png', '/icon-192.png', '/icon-512.png', '/assets/shpeshft-logo.png'];
 
 self.addEventListener('install', (event) => {
   event.waitUntil(caches.open(CACHE).then((cache) => cache.addAll(SHELL)));
