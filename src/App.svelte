@@ -38,6 +38,7 @@
   let pan: null | { x: number; y: number; viewX: number; viewY: number; moved: boolean } = null;
   let lasso: null | { start:{x:number;y:number}; current:{x:number;y:number}; ids:string[] } = null;
   let pinch: null | { distance: number; scale: number; anchorX: number; anchorY: number } = null;
+  let twoFingerTap: null | { ids:Set<number>; starts:Map<number,{x:number;y:number}>; started:number; moved:boolean } = null;
   let guides: Guide[] = [];
   let longPressTimer: number | undefined, pressStart: null | { x: number; y: number; id: string | null } = null;
   let frame = 0, saveTimer: number | undefined;
@@ -112,7 +113,7 @@
   function booleanSelection(operation: BooleanOperation) {
     if(selectionLocked()){status='Unlock selection to combine';return;}
     const results=booleanShapes(selectedIds.map((id)=>document.objects[id]).filter(Boolean),operation);if(!results.length){status=`${operation} produced no overlapping artwork`;return;}
-    const before=Object.fromEntries(selectedIds.map((id)=>[id,document.objects[id]])),after=Object.fromEntries([...selectedIds.map((id)=>[id,null] as const),...results.map((result)=>[result.id,result] as const)]),first=Math.min(...selectedIds.map((id)=>document.order.indexOf(id))),order=document.order.filter((id)=>!selectedIds.includes(id));order.splice(first,0,...results.map((result)=>result.id));execute(new ReplaceObjectsCommand(before,after,document.order,order));selectedIds=results.map((result)=>result.id);selectedId=selectedIds.at(-1)??null;actionsOpen=false;status=`${results[0].name} created`;draw();
+    const groupId=results.length>1?crypto.randomUUID():null,combined=results.map((result)=>({...result,parentId:groupId})),before=Object.fromEntries(selectedIds.map((id)=>[id,document.objects[id]])),after=Object.fromEntries([...selectedIds.map((id)=>[id,null] as const),...combined.map((result)=>[result.id,result] as const)]),first=Math.min(...selectedIds.map((id)=>document.order.indexOf(id))),order=document.order.filter((id)=>!selectedIds.includes(id));order.splice(first,0,...combined.map((result)=>result.id));execute(new ReplaceObjectsCommand(before,after,document.order,order));selectedIds=combined.map((result)=>result.id);selectedId=selectedIds.at(-1)??null;actionsOpen=false;status=combined.length>1?'Combined as one group':`${combined[0].name} created`;draw();
   }
 
   function editablePath(object:VectorObject):VectorObject {
@@ -245,14 +246,15 @@
   function cancelObjectInteraction() { if (nodeDrag) { replaceNode(nodeDrag.objectId,nodeDrag.nodeId,()=>nodeDrag!.before); nodeDrag=null; } if (drag) { if (drag.beforeSelection) { const objects={...document.objects}; for(const id of Object.keys(drag.beforeSelection)) objects[id]={...objects[id],transform:drag.beforeSelection[id]}; document={...document,objects}; } else { const object=document.objects[drag.id]; if(object) document={...document,objects:{...document.objects,[drag.id]:{...object,transform:drag.before}}}; } drag=null; } guides=[]; draw(); }
   function pointerDown(event: PointerEvent) {
     canvas.setPointerCapture(event.pointerId); pointers.set(event.pointerId, { x: event.clientX, y: event.clientY });
-    if (pointers.size === 2) { window.clearTimeout(longPressTimer); pressStart = null; lasso=null; cancelObjectInteraction(); const [a, b] = [...pointers.values()], rect = canvas.getBoundingClientRect(), midpoint = { x: (a.x + b.x) / 2 - rect.left, y: (a.y + b.y) / 2 - rect.top }, distance = Math.max(1, Math.hypot(a.x - b.x, a.y - b.y)); pinch = { distance, scale: view.scale, anchorX: (midpoint.x - view.x) / view.scale, anchorY: (midpoint.y - view.y) / view.scale }; pan = null; return; }
+    if(styleMode){styleMode=false;status='Selection';}
+    if (pointers.size === 2) { window.clearTimeout(longPressTimer); pressStart = null; lasso=null; cancelObjectInteraction(); const [a, b] = [...pointers.values()], rect = canvas.getBoundingClientRect(), midpoint = { x: (a.x + b.x) / 2 - rect.left, y: (a.y + b.y) / 2 - rect.top }, distance = Math.max(1, Math.hypot(a.x - b.x, a.y - b.y)); pinch = { distance, scale: view.scale, anchorX: (midpoint.x - view.x) / view.scale, anchorY: (midpoint.y - view.y) / view.scale };twoFingerTap={ids:new Set(pointers.keys()),starts:new Map(pointers),started:performance.now(),moved:false}; pan = null; return; }
     const rect = canvas.getBoundingClientRect(), world = screenToWorld(event.clientX - rect.left, event.clientY - rect.top);
     if (editMode && selectedId) {
       const object = document.objects[selectedId]; if (object?.geometry.kind === 'path') { const local = worldToLocal(object, world.x, world.y), radius = 22 / (view.scale * Math.max(.08, Math.min(Math.abs(object.transform.scaleX), Math.abs(object.transform.scaleY))));
         for (const node of [...object.geometry.nodes].reverse()) { if (node.id === selectedNodeId) for (const part of ['in', 'out'] as const) { const h = node[part]; if (h && Math.hypot(local.x - node.anchor.x - h.x, local.y - node.anchor.y - h.y) <= radius) { nodeDrag = { objectId: object.id, nodeId: node.id, part, before: node }; return; } } if (Math.hypot(local.x - node.anchor.x, local.y - node.anchor.y) <= radius) { selectedNodeId = node.id; nodeDrag = { objectId: object.id, nodeId: node.id, part: 'anchor', before: node }; draw(); return; } }
         let closest: { index:number; t:number; distance:number } | null = null; const segments = object.geometry.closed ? object.geometry.nodes.length : object.geometry.nodes.length - 1; for (let index = 0; index < segments; index += 1) { const candidate = nearestCubicPoint(object.geometry.nodes, index, local); if (!closest || candidate.distance < closest.distance) closest = { index, ...candidate }; } if (closest && closest.distance <= radius) { selectedSegment = { index: closest.index, t: closest.t }; selectedNodeId = null; status = 'Segment selected'; draw(); return; }
       }
-      if(editMode)return;
+      if(editMode){exitEditMode();return;}
     }
     if (!editMode && selectedId) {
       const selectedObject=document.objects[selectedId],bounds=worldBounds()!,origin=selectedIds.length===1?objectCenter(selectedObject):{x:bounds.x+bounds.width/2,y:bounds.y+bounds.height/2},controls=selectionControls();
@@ -269,6 +271,7 @@
   }
   function pointerMove(event: PointerEvent) {
     if (!pointers.has(event.pointerId)) return; pointers.set(event.pointerId, { x: event.clientX, y: event.clientY });
+    if(twoFingerTap){const start=twoFingerTap.starts.get(event.pointerId);if(start&&Math.hypot(event.clientX-start.x,event.clientY-start.y)>10)twoFingerTap.moved=true;}
     if (pressStart && Math.hypot(event.clientX - pressStart.x, event.clientY - pressStart.y) > 8) { window.clearTimeout(longPressTimer); pressStart = null; }
     if (pointers.size === 2 && pinch) { const [a, b] = [...pointers.values()], rect = canvas.getBoundingClientRect(), midpoint = { x: (a.x + b.x) / 2 - rect.left, y: (a.y + b.y) / 2 - rect.top }; view = zoomFromAnchor({ x: pinch.anchorX, y: pinch.anchorY }, midpoint, pinch.scale * Math.hypot(a.x - b.x, a.y - b.y) / pinch.distance); viewWasAdjusted = true; draw(); return; }
     if(lasso){const rect=canvas.getBoundingClientRect(),current=screenToWorld(event.clientX-rect.left,event.clientY-rect.top),area={x:Math.min(lasso.start.x,current.x),y:Math.min(lasso.start.y,current.y),width:Math.abs(current.x-lasso.start.x),height:Math.abs(current.y-lasso.start.y)},ids=expandGroups(document.order.filter((id)=>objectIntersectsRect(document.objects[id],area)));lasso={...lasso,current,ids};draw();return;}
@@ -283,7 +286,7 @@
     }
   }
   function pointerUp(event: PointerEvent) {
-    window.clearTimeout(longPressTimer); pressStart = null; pointers.delete(event.pointerId); if (pointers.size < 2) pinch = null; const finishedPan=pan,finishedLasso=lasso; pan = null;lasso=null;guides = [];if(finishedLasso){selectedIds=finishedLasso.ids;selectedId=selectedIds.at(-1)??null;multiMode=false;orientedControls=false;status=selectedIds.length?`${selectedIds.length} selected`:'No objects selected';draw();return;} if(finishedPan&&!finishedPan.moved&&pointers.size===0&&!multiMode)clearSelection();
+    window.clearTimeout(longPressTimer); pressStart = null; pointers.delete(event.pointerId);if(twoFingerTap&&![...twoFingerTap.ids].some((id)=>pointers.has(id))){const shouldUndo=!twoFingerTap.moved&&performance.now()-twoFingerTap.started<500;twoFingerTap=null;pinch=null;if(shouldUndo){undo();status='Undo';return;}} if (pointers.size < 2) pinch = null; const finishedPan=pan,finishedLasso=lasso; pan = null;lasso=null;guides = [];if(finishedLasso){selectedIds=finishedLasso.ids;selectedId=selectedIds.at(-1)??null;multiMode=false;orientedControls=false;status=selectedIds.length?`${selectedIds.length} selected`:'No objects selected';draw();return;} if(finishedPan&&!finishedPan.moved&&pointers.size===0){if(multiMode){multiMode=false;status='Selection';draw();}else clearSelection();}
     if (nodeDrag) { const object = document.objects[nodeDrag.objectId], after = object.geometry.kind === 'path' ? object.geometry.nodes.find((node) => node.id === nodeDrag?.nodeId) : undefined; if (after && JSON.stringify(after) !== JSON.stringify(nodeDrag.before)) { const before = nodeDrag.before; replaceNode(nodeDrag.objectId, nodeDrag.nodeId, () => before); execute(new MovePathNodeCommand(nodeDrag.objectId, nodeDrag.nodeId, before, after)); } nodeDrag = null; }
     if (drag) { if(drag.kind==='dimension'&&!drag.edge&&!drag.moved){resizeMode=resizeMode==='symmetric'?'edge':'symmetric';status=resizeMode==='symmetric'?'Symmetric resize':'Single-edge resize';draw();drag=null;return;} if (drag.beforeSelection && selectedIds.length > 1) { const after = Object.fromEntries(selectedIds.map((id) => [id, document.objects[id]])), before = Object.fromEntries(selectedIds.map((id) => [id, { ...document.objects[id], transform: drag!.beforeSelection![id] }])); document = { ...document, objects: { ...document.objects, ...before } }; execute(new ReplaceObjectsCommand(before, after, document.order, document.order)); } else { const object = document.objects[drag.id]; if (JSON.stringify(object.transform) !== JSON.stringify(drag.before)) { const after = object.transform; document = { ...document, objects: { ...document.objects, [drag.id]: { ...object, transform: drag.before } } }; execute(new TransformObjectCommand(drag.id, drag.before, after)); } } drag = null; }
   }
@@ -300,23 +303,22 @@
 
 <main>
   <header>
-    <span class="save-state">{status}</span>
+    <div class="header-left"><button class="new-workspace" on:click={newWorkspace} aria-label="New Workspace" title="New workspace">＋</button><span class="save-state">{status}</span></div>
     <div class="brand" aria-label="SHPESHFT"><img src="/assets/shpeshft-logo.png" alt="SHPESHFT" /></div>
-    <button class="new-workspace" on:click={newWorkspace} aria-label="New Workspace">＋</button>
+    <nav class="header-history" aria-label="History"><button on:click={undo} disabled={!history.canUndo} aria-label="Undo">↶</button><button on:click={redo} disabled={!history.canRedo} aria-label="Redo">↷</button></nav>
   </header>
   <section class="workspace-shell">
     <canvas bind:this={canvas} aria-label="SHPESHFT Workspace" on:pointerdown={pointerDown} on:pointermove={pointerMove} on:pointerup={pointerUp} on:pointercancel={pointerUp} on:wheel={wheel}></canvas>
 
     {#if !selectedId}
-      <nav class="creation-dock" aria-label="Add shapes"><button on:click={() => addShape('triangle')} aria-label="Add triangle">▲</button><button on:click={() => addShape('rectangle')} aria-label="Add rectangle">■</button><button on:click={() => addShape('ellipse')} aria-label="Add ellipse">●</button><i></i><button on:click={() => multiMode = !multiMode} class:active={multiMode} aria-label="Multi-select">⊕</button><button on:click={undo} disabled={!history.canUndo} aria-label="Undo">↶</button><button aria-label="Export SVG" on:click={exportSvg}>SVG</button><button class="more" aria-label="Export project backup" on:click={exportProject}>•••</button></nav>
+      <nav class="creation-dock" aria-label="Add shapes"><button on:click={() => addShape('triangle')} aria-label="Add triangle">▲</button><button on:click={() => addShape('rectangle')} aria-label="Add rectangle">■</button><button on:click={() => addShape('ellipse')} aria-label="Add ellipse">●</button><i></i><button on:click={() => multiMode = !multiMode} class:active={multiMode} aria-label="Multi-select">⊕</button><button aria-label="Export SVG" on:click={exportSvg}>SVG</button><button class="more" aria-label="Export project backup" on:click={exportProject}>•••</button></nav>
     {:else if editMode}
-      <nav class="context-dock edit-dock" aria-label="Shape Edit controls"><button class="done" on:click={exitEditMode}>Done</button><button on:click={addNode} aria-label="Insert node on selected segment" disabled={!selectedSegment}>＋</button><button on:click={() => setNodeKind('corner')} aria-label="Corner node" disabled={!selectedNodeId}>◆</button><button on:click={() => setNodeKind('smooth')} aria-label="Smooth node" disabled={!selectedNodeId}>⌒</button><button on:click={() => setNodeKind('symmetric')} aria-label="Symmetric node" disabled={!selectedNodeId}>↔</button><button on:click={() => setNodeKind('independent')} aria-label="Independent node" disabled={!selectedNodeId}>◇</button><button on:click={deleteNode} aria-label="Delete node" disabled={!selectedNodeId}>−</button><button on:click={undo} disabled={!history.canUndo} aria-label="Undo">↶</button></nav>
+      <nav class="context-dock edit-dock" aria-label="Shape Edit controls"><button on:click={addNode} aria-label="Insert node on selected segment" disabled={!selectedSegment}>＋</button><button on:click={() => setNodeKind('corner')} aria-label="Corner node" disabled={!selectedNodeId}>◆</button><button on:click={() => setNodeKind('smooth')} aria-label="Smooth node" disabled={!selectedNodeId}>⌒</button><button on:click={() => setNodeKind('symmetric')} aria-label="Symmetric node" disabled={!selectedNodeId}>↔</button><button on:click={() => setNodeKind('independent')} aria-label="Independent node" disabled={!selectedNodeId}>◇</button><button on:click={deleteNode} aria-label="Delete node" disabled={!selectedNodeId}>−</button></nav>
     {:else if !toolsVisible}
       <button class="show-tools" on:click={() => toolsVisible = true} aria-label="Show selection tools">Tools</button>
     {:else}
       <nav class={styleMode ? 'context-dock style-dock' : actionsOpen ? 'context-dock' : 'context-dock object-dock'} aria-label={styleMode ? 'Fill and Stroke' : 'Object actions'}>
         {#if styleMode && selectedIds.length > 0}
-          <button class="done" on:click={() => styleMode = false}>Done</button>
           <label class="toggle"><input type="checkbox" checked={document.objects[selectedId]?.style.fillEnabled} on:change={(event) => setStyle({ fillEnabled: event.currentTarget.checked }, event.currentTarget.checked ? 'Fill on' : 'Fill off')} />Fill</label>
           {#if document.objects[selectedId]?.style.fillEnabled}<input class="colour" aria-label="Fill colour" type="color" value={document.objects[selectedId]?.style.fill} on:change={(event) => setStyle({ fill: event.currentTarget.value }, 'Fill colour')} />{/if}
           {#if document.objects[selectedId]?.style.fillEnabled}<label>Fill α <input aria-label="Fill opacity" type="range" min="0" max="1" step=".05" value={document.objects[selectedId]?.style.fillOpacity} on:pointerdown={beginStyleGesture} on:input={(event) => previewStyle({ fillOpacity: Number(event.currentTarget.value) })} on:change={() => commitStyleGesture('Fill opacity')} /></label>{/if}
@@ -347,7 +349,7 @@
           <div class="layer-tools" aria-label="Layer order"><button disabled={selectionLocked()} on:click={() => reorder(1)} aria-label="Move forward"><span>▰</span><small>Front</small></button><button disabled={selectionLocked()} on:click={() => reorder(-1)} aria-label="Move backward"><span>▱</span><small>Back</small></button></div>
           <button class="tool-button" disabled={selectionLocked()} on:click={() => styleMode = true} aria-label="Fill and stroke"><span>◐</span><small>Style</small></button>
           <button class="tool-button" class:active={selectionLocked()} on:click={toggleLock} aria-label={selectionLocked()?'Unlock selection':'Lock selection'}><span>{selectionLocked()?'⌾':'□'}</span><small>{selectionLocked()?'Unlock':'Lock'}</small></button>
-          {#if multiMode}<button class="tool-button active" on:click={() => { multiMode = false; status = 'Selection'; }}><span>✓</span><small>Done</small></button>{:else}<button class="tool-button" on:click={() => multiMode = true} aria-label="Add to selection"><span>⊕</span><small>Select</small></button>{/if}
+          <button class="tool-button" class:active={multiMode} on:click={() => { multiMode = !multiMode; status = multiMode?'Tap more shapes':'Selection'; }} aria-label="Add to selection"><span>⊕</span><small>Select</small></button>
         {/if}
         {/if}
       </nav>

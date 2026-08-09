@@ -7,7 +7,7 @@ main { height: 100%; display: grid; grid-template-rows: 60px 1fr; padding: env(s
 header { display: grid; grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr); align-items: center; padding: 7px 18px; gap: 14px; }
 .brand { grid-column: 2; width: 196px; height: 40px; display: flex; align-items: center; }
 .brand img { display: block; width: 100%; height: 100%; object-fit: contain; mix-blend-mode: multiply; }
-.save-state { grid-column: 1; grid-row: 1; min-width: 0; color: #666; font-size: 10px; text-transform: uppercase; letter-spacing: .1em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.header-left { grid-column:1;grid-row:1;display:flex;align-items:center;gap:8px;min-width:0; }.save-state { min-width: 0; color: #666; font-size: 10px; text-transform: uppercase; letter-spacing: .1em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .workspace-shell { min-height: 0; position: relative; overflow: hidden; border-block: 1px solid #bdbab3; }
 canvas { width: 100%; height: 100%; display: block; touch-action: none; cursor: default; }
 .creation-dock, .context-dock { position: absolute; z-index: 3; left: 50%; bottom: max(14px, env(safe-area-inset-bottom)); transform: translateX(-50%); display: flex; align-items: center; gap: 5px; max-width: calc(100% - 24px); padding: 6px; background: rgba(244,241,234,.96); border: 2px solid #111; box-shadow: 4px 4px 0 #111; overflow-x: auto; scrollbar-width: none; }
@@ -24,12 +24,13 @@ canvas { width: 100%; height: 100%; display: block; touch-action: none; cursor: 
 .context-dock .toggle { flex-basis: auto; display: flex; min-height: 42px; }.context-dock .toggle input { width: 18px; height: 18px; }.context-dock .colour { flex: 0 0 42px; width: 42px; height: 38px; padding: 2px; border: 1px solid #777; background: #fff; }
 .axis { flex: 0 0 auto; display: flex; align-items: center; gap: 2px; padding: 2px; border: 1px solid #aaa; }.axis button { min-height: 40px; min-width: auto; padding-inline: 10px; }
 .edit-dock .done { color: #fff; background: #111; padding-inline: 18px; }
-.new-workspace { grid-column: 3; grid-row: 1; justify-self: end; width: 40px; height: 40px; padding: 0; border: 1px solid #111; background: transparent; font-size: 21px; line-height: 1; }
+.new-workspace { flex:0 0 auto;width: 40px; height: 40px; padding: 0; border: 1px solid #111; background: transparent; font-size: 21px; line-height: 1; }
 .new-workspace:hover, .new-workspace:focus-visible { color: #fff; background: #111; }
+.header-history {grid-column:3;grid-row:1;justify-self:end;display:flex;border:1px solid #111;background:#f4f1ea}.header-history button{width:38px;height:38px;padding:0;border:0;border-right:1px solid #111;background:transparent;font-size:20px}.header-history button:last-child{border-right:0}.header-history button:not(:disabled):hover,.header-history button:not(:disabled):focus-visible{background:#111;color:#fff}
 .benchmark { position: absolute; z-index: 5; top: 10px; right: 10px; display: flex; align-items: center; gap: 2px; background: #111; color: #fff; padding: 4px; }.benchmark span { padding: 0 7px; font-size: 10px; }.benchmark button { min-height: 34px; border: 0; background: #fff; color: #111; font-size: 11px; font-weight: 700; }
 @media (max-width: 680px) {
-  main { grid-template-rows: 52px 1fr; }.brand { width: 148px; height: 34px; }.save-state { max-width: 72px; font-size: 8px; }
-  header { padding: 6px 10px; gap: 7px; }.new-workspace { width: 38px; height: 38px; }.creation-dock, .context-dock { left: 10px; right: 10px; transform: none; max-width: none; bottom: 10px; }.creation-dock { justify-content: space-around; }.context-dock { padding-right: 10px; }
+  main { grid-template-rows: 52px 1fr; }.brand { width: 132px; height: 32px; }.save-state { display:none; }
+  header { padding: 6px 10px; gap: 7px; }.new-workspace { width: 38px; height: 38px; }.header-history button{width:34px;height:38px}.creation-dock, .context-dock { left: 10px; right: 10px; transform: none; max-width: none; bottom: 10px; }.creation-dock { justify-content: space-around; }.context-dock { padding-right: 10px; }
   .creation-dock button, .context-dock button { min-width: 48px; min-height: 48px; }.context-dock label { flex-basis: 155px; }.axis button { min-width: auto; }
   .context-dock.object-dock { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 3px; overflow: visible; }
   .context-dock.object-dock .tool-button { width: 100%; min-width: 0; min-height: 43px; border-radius: 2px; }.context-dock.object-dock .tool-button span { font-size: 23px; line-height: 21px; }
