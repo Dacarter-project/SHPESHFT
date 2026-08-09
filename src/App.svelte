@@ -203,7 +203,7 @@
 <svelte:window on:keydown={(event) => { if ((event.metaKey || event.ctrlKey) && event.key === 'z') event.shiftKey ? redo() : undo(); if (event.key === 'Escape') editMode ? exitEditMode() : clearSelection(); if ((event.key === 'Backspace' || event.key === 'Delete') && !editMode) deleteSelection(); }} />
 
 <main>
-  <header><div class="brand" aria-label="SHPESHFT"><span class="handle square"></span><b>SHPESHFT</b><span class="line"></span><span class="handle circle"></span></div><span class="save-state">{status}</span></header>
+  <header><div class="brand" aria-label="SHPESHFT"><img src="/assets/shpeshft-logo.png" alt="SHPESHFT" /></div><span class="save-state">{status}</span></header>
   <section class="workspace-shell">
     <canvas bind:this={canvas} aria-label="SHPESHFT Workspace" on:pointerdown={pointerDown} on:pointermove={pointerMove} on:pointerup={pointerUp} on:pointercancel={pointerUp} on:wheel={wheel}></canvas>
 

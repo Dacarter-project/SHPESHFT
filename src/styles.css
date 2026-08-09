@@ -5,8 +5,8 @@ button, input { font: inherit; color: inherit; }
 button { -webkit-tap-highlight-color: transparent; }
 main { height: 100%; display: grid; grid-template-rows: 66px 1fr 38px; padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left); }
 header { display: flex; align-items: center; justify-content: space-between; padding: 10px 18px; gap: 14px; }
-.brand { height: 40px; min-width: 236px; border: 2px solid #111; display: flex; align-items: center; padding: 0 17px; position: relative; letter-spacing: .1em; }
-.brand .line { flex: 1; }.handle { position: absolute; width: 13px; height: 13px; background: #f4f1ea; border: 2px solid #111; }.handle.square { left: -7px; top: -7px; }.handle.circle { right: -7px; bottom: -7px; border-radius: 50%; }
+.brand { width: 238px; height: 46px; display: flex; align-items: center; }
+.brand img { display: block; width: 100%; height: 100%; object-fit: contain; mix-blend-mode: multiply; }
 .save-state { color: #666; font-size: 10px; text-transform: uppercase; letter-spacing: .1em; }
 .workspace-shell { min-height: 0; position: relative; overflow: hidden; border-block: 1px solid #bdbab3; }
 canvas { width: 100%; height: 100%; display: block; touch-action: none; cursor: default; }
@@ -23,7 +23,7 @@ canvas { width: 100%; height: 100%; display: block; touch-action: none; cursor: 
 .benchmark { position: absolute; z-index: 5; top: 10px; right: 10px; display: flex; align-items: center; gap: 2px; background: #111; color: #fff; padding: 4px; }.benchmark span { padding: 0 7px; font-size: 10px; }.benchmark button { min-height: 34px; border: 0; background: #fff; color: #111; font-size: 11px; font-weight: 700; }
 footer { display: flex; justify-content: center; align-items: center; gap: 7px; font-size: 12px; letter-spacing: .04em; }.triangle { width: 0; height: 0; border-left: 10px solid transparent; border-right: 10px solid transparent; border-bottom: 18px solid #111; }.bar { width: 7px; height: 18px; background: #111; }
 @media (max-width: 680px) {
-  main { grid-template-rows: 56px 1fr 28px; }.brand { min-width: 174px; width: 174px; height: 34px; padding: 0 11px; font-size: 12px; }.save-state { max-width: 120px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  main { grid-template-rows: 56px 1fr 28px; }.brand { width: 178px; height: 42px; }.save-state { max-width: 120px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   header { padding: 9px 11px; }.creation-dock, .context-dock { left: 10px; right: 10px; transform: none; max-width: none; bottom: 10px; }.creation-dock { justify-content: space-around; }.context-dock { padding-right: 10px; }
   .creation-dock button, .context-dock button { min-width: 48px; min-height: 48px; }.context-dock label { flex-basis: 155px; }.axis button { min-width: auto; }
   .new-workspace { top: 8px; left: 8px; }.benchmark { top: 8px; max-width: calc(100% - 16px); overflow-x: auto; }
