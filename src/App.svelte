@@ -5,6 +5,7 @@
   import { unionRectangles } from './engine/boolean';
   import { createBenchmarkDocument, createNodeBenchmarkDocument, createPathBenchmarkDocument } from './engine/benchmark';
   import { hitTest, localBounds, localToWorld, tracePath, worldToLocal } from './engine/geometry';
+  import { fitWorkspace, zoomAt, zoomFromAnchor } from './engine/viewport';
   import { loadLatestProject, saveProject } from './storage/database';
 
   let canvas: HTMLCanvasElement;
@@ -23,9 +24,11 @@
   let nodeDrag: null | { objectId: string; nodeId: string; part: 'anchor' | 'in' | 'out'; before: PathNode } = null;
   let selectedNodeId: string | null = null;
   let pan: null | { x: number; y: number; viewX: number; viewY: number } = null;
-  let pinch: null | { distance: number; scale: number } = null;
+  let pinch: null | { distance: number; scale: number; anchorX: number; anchorY: number } = null;
   let frame = 0;
   let saveTimer: number | undefined;
+  let hasFittedView = false;
+  let viewWasAdjusted = false;
 
   let renderMs = 0;
 
@@ -77,7 +80,7 @@
   }
   function newWorkspace() {
     if (document.order.length && !window.confirm('Start a blank Workspace? Export a backup first if you need this design.')) return;
-    document = createDocument(); history.clear(); clearSelection(); status = 'New blank Workspace'; scheduleSave(); draw();
+    document = createDocument(); history.clear(); clearSelection(); status = 'New blank Workspace'; viewWasAdjusted = false; hasFittedView = false; resize(); scheduleSave();
   }
   function exportProject() {
     const blob = new Blob([JSON.stringify(document, null, 2)], { type: 'application/json' }); const url = URL.createObjectURL(blob); const link = window.document.createElement('a');
@@ -93,7 +96,9 @@
     const rect = canvas.getBoundingClientRect();
     const ratio = Math.min(window.devicePixelRatio || 1, 2);
     canvas.width = Math.max(1, Math.round(rect.width * ratio)); canvas.height = Math.max(1, Math.round(rect.height * ratio));
-    canvas.getContext('2d')?.setTransform(ratio, 0, 0, ratio, 0, 0); draw();
+    canvas.getContext('2d')?.setTransform(ratio, 0, 0, ratio, 0, 0);
+    if (!hasFittedView || !viewWasAdjusted) { view = fitWorkspace(rect.width, rect.height, document.workspace.width, document.workspace.height, rect.width < 680 ? 28 : 56); hasFittedView = true; }
+    draw();
   }
 
   function draw() {
@@ -153,7 +158,8 @@
   function pointerDown(event: PointerEvent) {
     canvas.setPointerCapture(event.pointerId); pointers.set(event.pointerId, { x: event.clientX, y: event.clientY });
     if (pointers.size === 2) {
-      const [a, b] = [...pointers.values()]; pinch = { distance: Math.hypot(a.x - b.x, a.y - b.y), scale: view.scale }; drag = null; return;
+      const [a, b] = [...pointers.values()]; const rect = canvas.getBoundingClientRect(); const midpoint = { x: (a.x + b.x) / 2 - rect.left, y: (a.y + b.y) / 2 - rect.top };
+      pinch = { distance: Math.max(1, Math.hypot(a.x - b.x, a.y - b.y)), scale: view.scale, anchorX: (midpoint.x - view.x) / view.scale, anchorY: (midpoint.y - view.y) / view.scale }; drag = null; nodeDrag = null; return;
     }
     if (mode === 'pan' || event.button === 1) { pan = { x: event.clientX, y: event.clientY, viewX: view.x, viewY: view.y }; return; }
     const rect = canvas.getBoundingClientRect(); const world = screenToWorld(event.clientX - rect.left, event.clientY - rect.top);
@@ -200,9 +206,10 @@
   function pointerMove(event: PointerEvent) {
     if (!pointers.has(event.pointerId)) return; pointers.set(event.pointerId, { x: event.clientX, y: event.clientY });
     if (pointers.size === 2 && pinch) {
-      const [a, b] = [...pointers.values()]; view = { ...view, scale: Math.max(.12, Math.min(5, pinch.scale * Math.hypot(a.x - b.x, a.y - b.y) / pinch.distance)) }; draw(); return;
+      const [a, b] = [...pointers.values()]; const rect = canvas.getBoundingClientRect(); const midpoint = { x: (a.x + b.x) / 2 - rect.left, y: (a.y + b.y) / 2 - rect.top };
+      view = zoomFromAnchor({ x: pinch.anchorX, y: pinch.anchorY }, midpoint, pinch.scale * Math.hypot(a.x - b.x, a.y - b.y) / pinch.distance); viewWasAdjusted = true; draw(); return;
     }
-    if (pan) { view = { ...view, x: pan.viewX + event.clientX - pan.x, y: pan.viewY + event.clientY - pan.y }; draw(); return; }
+    if (pan) { view = { ...view, x: pan.viewX + event.clientX - pan.x, y: pan.viewY + event.clientY - pan.y }; viewWasAdjusted = true; draw(); return; }
     if (nodeDrag) {
       const rect = canvas.getBoundingClientRect(); const world = screenToWorld(event.clientX - rect.left, event.clientY - rect.top); const object = document.objects[nodeDrag.objectId]; if (!object) return;
       const local = worldToLocal(object, world.x, world.y);
@@ -243,12 +250,12 @@
     }
   }
 
-  function wheel(event: WheelEvent) { event.preventDefault(); view = { ...view, scale: Math.max(.12, Math.min(5, view.scale * Math.exp(-event.deltaY * .001))) }; draw(); }
+  function wheel(event: WheelEvent) { event.preventDefault(); const rect = canvas.getBoundingClientRect(); view = zoomAt(view, { x: event.clientX - rect.left, y: event.clientY - rect.top }, view.scale * Math.exp(-event.deltaY * .001)); viewWasAdjusted = true; draw(); }
 
   onMount(() => {
     const observer = new ResizeObserver(resize); observer.observe(canvas); resize();
     void loadLatestProject().then((saved) => {
-      if (saved) { document = saved; status = 'Recovered local project'; draw(); }
+      if (saved) { document = saved; status = 'Recovered local project'; const rect = canvas.getBoundingClientRect(); view = fitWorkspace(rect.width, rect.height, document.workspace.width, document.workspace.height, rect.width < 680 ? 28 : 56); draw(); }
     });
     return () => observer.disconnect();
   });
