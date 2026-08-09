@@ -1,5 +1,5 @@
 import Dexie, { type EntityTable } from 'dexie';
-import type { ShpeshftDocument } from '../core/document';
+import { normalizeDocument, type ShpeshftDocument } from '../core/document';
 
 type StoredProject = { id: string; updatedAt: string; document: ShpeshftDocument };
 
@@ -12,5 +12,5 @@ export async function saveProject(document: ShpeshftDocument): Promise<void> {
 
 export async function loadLatestProject(): Promise<ShpeshftDocument | null> {
   const project = await database.projects.orderBy('updatedAt').last();
-  return project?.document ?? null;
+  return project?.document ? normalizeDocument(project.document) : null;
 }

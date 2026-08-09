@@ -57,4 +57,9 @@ describe('document commands', () => {
     expect(triangle.geometry.nodes).toHaveLength(3);
     expect(triangle.geometry.nodes.every((node) => node.kind === 'corner')).toBe(true);
   });
+  it('creates fill-only shapes and preserves stroke architecture through serialization', () => {
+    const rectangle = createRectangle(0, 0); expect(rectangle.style.fillEnabled).toBe(true); expect(rectangle.style.strokeEnabled).toBe(false);
+    const doc = createDocument(), styled = { ...rectangle, style: { ...rectangle.style, strokeEnabled: true, strokeWidth: 18, strokeDashArray: [36, 18], strokeLineCap: 'round' as const, strokeLineJoin: 'bevel' as const, strokeOpacity: .5 } }, source = serialize({ ...doc, objects: { [rectangle.id]: styled }, order: [rectangle.id] }), restored = deserialize(source);
+    expect(restored.objects[rectangle.id].style).toEqual(styled.style);
+  });
 });

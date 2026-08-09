@@ -1,8 +1,8 @@
 :root { font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; color: #111; background: #f4f1ea; font-synthesis: none; }
-* { box-sizing: border-box; }
+* { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
 html, body, #app { margin: 0; width: 100%; height: 100%; overflow: hidden; overscroll-behavior: none; }
+body, main, header, canvas, button, nav, label, span { -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; }
 button, input { font: inherit; color: inherit; }
-button { -webkit-tap-highlight-color: transparent; }
 main { height: 100%; display: grid; grid-template-rows: 60px 1fr 38px; padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left); }
 header { display: grid; grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr); align-items: center; padding: 7px 18px; gap: 14px; }
 .brand { grid-column: 2; width: 196px; height: 40px; display: flex; align-items: center; }
@@ -16,6 +16,7 @@ canvas { width: 100%; height: 100%; display: block; touch-action: none; cursor: 
 .creation-dock button { font-size: 20px; }.creation-dock button:hover, .creation-dock button.active, .context-dock button:hover, .context-dock button.active { color: #fff; background: #111; }.creation-dock button:disabled, .context-dock button:disabled { opacity: .28; }
 .creation-dock i { flex: 0 0 1px; height: 28px; background: #aaa; }.creation-dock .more { letter-spacing: .08em; }
 .context-dock { justify-content: flex-start; font-size: 12px; }.context-dock label { flex: 0 0 170px; display: grid; grid-template-columns: auto 1fr; align-items: center; gap: 7px; padding: 0 7px; }.context-dock input { width: 100%; accent-color: #111; }
+.context-dock .toggle { flex-basis: auto; display: flex; min-height: 42px; }.context-dock .toggle input { width: 18px; height: 18px; }.context-dock .colour { flex: 0 0 42px; width: 42px; height: 38px; padding: 2px; border: 1px solid #777; background: #fff; }
 .axis { flex: 0 0 auto; display: flex; align-items: center; gap: 2px; padding: 2px; border: 1px solid #aaa; }.axis button { min-height: 40px; min-width: auto; padding-inline: 10px; }
 .edit-dock .done { color: #fff; background: #111; padding-inline: 18px; }
 .edit-shape { position: absolute; z-index: 4; transform: translate(-50%, -110%); width: 36px; height: 36px; border-radius: 2px; border: 2px solid #111; background: #f4f1ea; box-shadow: 2px 2px 0 #111; font-size: 18px; }

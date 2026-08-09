@@ -1,4 +1,5 @@
 import type { VectorObject } from '../core/document';
+import { cubicPoints } from './bezier';
 
 export type Bounds = { x: number; y: number; width: number; height: number };
 
@@ -33,11 +34,12 @@ export function localToWorld(object: VectorObject, localX: number, localY: numbe
 export function localBounds(object: VectorObject): Bounds {
   if (object.geometry.kind === 'rect') return { x: 0, y: 0, width: object.geometry.width, height: object.geometry.height };
   if (object.geometry.kind === 'ellipse') return { x: -object.geometry.rx, y: -object.geometry.ry, width: object.geometry.rx * 2, height: object.geometry.ry * 2 };
-  const points = object.geometry.nodes.flatMap((node) => [
-    node.anchor,
-    node.in ? { x: node.anchor.x + node.in.x, y: node.anchor.y + node.in.y } : node.anchor,
-    node.out ? { x: node.anchor.x + node.out.x, y: node.anchor.y + node.out.y } : node.anchor
-  ]);
+  const points: Array<{ x:number; y:number }> = [];
+  const segments = object.geometry.closed ? object.geometry.nodes.length : Math.max(0, object.geometry.nodes.length - 1);
+  const roots = (p0:number, p1:number, p2:number, p3:number) => { const a = -p0 + 3*p1 - 3*p2 + p3, b = 2*(p0 - 2*p1 + p2), c = p1 - p0, result:number[] = []; if (Math.abs(a) < 1e-9) { if (Math.abs(b) > 1e-9) result.push(-c/b); } else { const d = b*b - 4*a*c; if (d >= 0) { result.push((-b + Math.sqrt(d))/(2*a), (-b - Math.sqrt(d))/(2*a)); } } return result.filter((t) => t > 0 && t < 1); };
+  const value = (p0:number,p1:number,p2:number,p3:number,t:number) => { const u=1-t; return u*u*u*p0+3*u*u*t*p1+3*u*t*t*p2+t*t*t*p3; };
+  for (let index=0; index<segments; index+=1) { const {p0,p1,p2,p3}=cubicPoints(object.geometry.nodes,index), ts = new Set([0,1,...roots(p0.x,p1.x,p2.x,p3.x),...roots(p0.y,p1.y,p2.y,p3.y)]); for (const t of ts) points.push({x:value(p0.x,p1.x,p2.x,p3.x,t),y:value(p0.y,p1.y,p2.y,p3.y,t)}); }
+  if (!points.length) points.push(...object.geometry.nodes.map((node) => node.anchor));
   const xs = points.map((point) => point.x), ys = points.map((point) => point.y);
   return { x: Math.min(...xs), y: Math.min(...ys), width: Math.max(...xs) - Math.min(...xs), height: Math.max(...ys) - Math.min(...ys) };
 }

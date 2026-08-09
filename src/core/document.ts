@@ -3,7 +3,12 @@ export const DOCUMENT_VERSION = 1;
 
 export type Point = Readonly<{ x: number; y: number }>;
 export type Transform = Readonly<{ x: number; y: number; scaleX: number; scaleY: number; rotation: number }>;
-export type Style = Readonly<{ fill: string; stroke: string | null; strokeWidth: number; opacity: number }>;
+export type Style = Readonly<{
+  fillEnabled: boolean; fill: string; fillOpacity: number;
+  strokeEnabled: boolean; strokeColor: string; strokeWidth: number; strokeOpacity: number;
+  strokeDashArray: readonly number[]; strokeLineCap: 'butt' | 'round' | 'square'; strokeLineJoin: 'round' | 'miter' | 'bevel'; strokeMiterLimit: number;
+  opacity: number;
+}>;
 
 export type RectGeometry = Readonly<{ kind: 'rect'; width: number; height: number; radius: number }>;
 export type EllipseGeometry = Readonly<{ kind: 'ellipse'; rx: number; ry: number }>;
@@ -36,7 +41,16 @@ export type ShpeshftDocument = Readonly<{
 
 const id = (): string => crypto.randomUUID();
 export const identityTransform = (): Transform => ({ x: 0, y: 0, scaleX: 1, scaleY: 1, rotation: 0 });
-export const defaultStyle = (fill = '#ff5a36'): Style => ({ fill, stroke: '#111111', strokeWidth: 2, opacity: 1 });
+export const defaultStyle = (fill = '#ff5a36'): Style => ({ fillEnabled: true, fill, fillOpacity: 1, strokeEnabled: false, strokeColor: '#111111', strokeWidth: 2, strokeOpacity: 1, strokeDashArray: [], strokeLineCap: 'butt', strokeLineJoin: 'round', strokeMiterLimit: 4, opacity: 1 });
+
+export function normalizeStyle(value: Partial<Style> & { stroke?: string | null }): Style {
+  const defaults = defaultStyle(typeof value.fill === 'string' ? value.fill : '#ff5a36');
+  return { ...defaults, ...value, fillEnabled: value.fillEnabled ?? true, fillOpacity: value.fillOpacity ?? 1, strokeEnabled: value.strokeEnabled ?? Boolean(value.stroke), strokeColor: value.strokeColor ?? value.stroke ?? defaults.strokeColor, strokeDashArray: value.strokeDashArray ?? [], strokeLineCap: value.strokeLineCap ?? 'butt', strokeLineJoin: value.strokeLineJoin ?? 'round', strokeMiterLimit: value.strokeMiterLimit ?? 4, strokeOpacity: value.strokeOpacity ?? 1 };
+}
+
+export function normalizeDocument(document: ShpeshftDocument): ShpeshftDocument {
+  return { ...document, objects: Object.fromEntries(Object.entries(document.objects).map(([id, object]) => [id, { ...object, style: normalizeStyle(object.style as Partial<Style> & { stroke?: string | null }) }])) };
+}
 
 export function createDocument(now = new Date().toISOString()): ShpeshftDocument {
   return {
