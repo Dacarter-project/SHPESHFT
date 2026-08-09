@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { createRectangle, createTriangle } from '../core/document';
-import { localBounds, localCenter, localToWorld, objectCenter, worldToLocal } from './geometry';
+import { localBounds, localCenter, localToWorld, objectCenter, objectIntersectsRect, worldToLocal } from './geometry';
 
 describe('centre-based object transforms', () => {
   it('keeps a rectangle centre fixed while rotating', () => {
@@ -24,4 +24,9 @@ describe('centre-based object transforms', () => {
     const curved = { ...triangle, geometry: { ...triangle.geometry, nodes: triangle.geometry.nodes.map((node, index) => index === 0 ? { ...node, out: { x: 500, y: 0 } } : node) } };
     expect(localBounds(curved).width).toBeLessThan(500);
   });
+});
+
+describe('marquee geometry intersection',()=>{
+  it('selects a shape when the marquee only crosses its visible edge',()=>{const rectangle=createRectangle(100,100);expect(objectIntersectsRect(rectangle,{x:90,y:120,width:20,height:20})).toBe(true);});
+  it('does not select artwork outside the marquee',()=>{const triangle=createTriangle(300,300);expect(objectIntersectsRect(triangle,{x:0,y:0,width:100,height:100})).toBe(false);});
 });

@@ -65,3 +65,21 @@ export function hitTest(object: VectorObject, worldX: number, worldY: number): b
   const bounds = localBounds(object);
   return x >= bounds.x && x <= bounds.x + bounds.width && y >= bounds.y && y <= bounds.y + bounds.height;
 }
+
+export function objectOutlinePoints(object: VectorObject): Array<{x:number;y:number}> {
+  const local:Array<{x:number;y:number}>=[];
+  if(object.geometry.kind==='rect') local.push({x:0,y:0},{x:object.geometry.width,y:0},{x:object.geometry.width,y:object.geometry.height},{x:0,y:object.geometry.height});
+  else if(object.geometry.kind==='ellipse') for(let index=0;index<64;index+=1){const angle=index*Math.PI/32;local.push({x:Math.cos(angle)*object.geometry.rx,y:Math.sin(angle)*object.geometry.ry});}
+  else {const segments=object.geometry.closed?object.geometry.nodes.length:Math.max(0,object.geometry.nodes.length-1);for(let index=0;index<segments;index+=1){const{p0,p1,p2,p3}=cubicPoints(object.geometry.nodes,index);for(let step=0;step<16;step+=1){const t=step/16,u=1-t;local.push({x:u*u*u*p0.x+3*u*u*t*p1.x+3*u*t*t*p2.x+t*t*t*p3.x,y:u*u*u*p0.y+3*u*u*t*p1.y+3*u*t*t*p2.y+t*t*t*p3.y});}}}
+  return local.map((point)=>localToWorld(object,point.x,point.y));
+}
+
+export function objectIntersectsRect(object:VectorObject,rect:Bounds):boolean {
+  const right=rect.x+rect.width,bottom=rect.y+rect.height,inside=(point:{x:number;y:number})=>point.x>=rect.x&&point.x<=right&&point.y>=rect.y&&point.y<=bottom,points=objectOutlinePoints(object);
+  if(!points.length)return false;
+  if(points.some(inside))return true;
+  if(object.geometry.kind!=='path'||object.geometry.closed)for(const corner of [{x:rect.x,y:rect.y},{x:right,y:rect.y},{x:right,y:bottom},{x:rect.x,y:bottom}])if(hitTest(object,corner.x,corner.y))return true;
+  const orientation=(a:{x:number;y:number},b:{x:number;y:number},c:{x:number;y:number})=>(b.x-a.x)*(c.y-a.y)-(b.y-a.y)*(c.x-a.x),intersects=(a:{x:number;y:number},b:{x:number;y:number},c:{x:number;y:number},d:{x:number;y:number})=>{const o1=orientation(a,b,c),o2=orientation(a,b,d),o3=orientation(c,d,a),o4=orientation(c,d,b);return ((o1<=0&&o2>=0)||(o1>=0&&o2<=0))&&((o3<=0&&o4>=0)||(o3>=0&&o4<=0));},edges=[[{x:rect.x,y:rect.y},{x:right,y:rect.y}],[{x:right,y:rect.y},{x:right,y:bottom}],[{x:right,y:bottom},{x:rect.x,y:bottom}],[{x:rect.x,y:bottom},{x:rect.x,y:rect.y}]] as const,last=object.geometry.kind==='path'&&!object.geometry.closed?points.length-1:points.length;
+  for(let index=0;index<last;index+=1)for(const edge of edges)if(intersects(points[index],points[(index+1)%points.length],edge[0],edge[1]))return true;
+  return false;
+}

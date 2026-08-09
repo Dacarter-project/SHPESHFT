@@ -49,7 +49,7 @@ export function normalizeStyle(value: Partial<Style> & { stroke?: string | null 
 }
 
 export function normalizeDocument(document: ShpeshftDocument): ShpeshftDocument {
-  return { ...document, objects: Object.fromEntries(Object.entries(document.objects).map(([id, object]) => [id, { ...object, style: normalizeStyle(object.style as Partial<Style> & { stroke?: string | null }) }])) };
+  return { ...document, objects: Object.fromEntries(Object.entries(document.objects).map(([id, object]) => [id, { ...object, locked: object.locked ?? false, style: normalizeStyle(object.style as Partial<Style> & { stroke?: string | null }) }])) };
 }
 
 export function createDocument(now = new Date().toISOString()): ShpeshftDocument {
