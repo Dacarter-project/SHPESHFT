@@ -13,7 +13,7 @@ export type Style = Readonly<{
 export type RectGeometry = Readonly<{ kind: 'rect'; width: number; height: number; radius: number }>;
 export type EllipseGeometry = Readonly<{ kind: 'ellipse'; rx: number; ry: number }>;
 export type PathNode = Readonly<{ id: string; anchor: Point; in: Point | null; out: Point | null; kind: 'corner' | 'smooth' | 'symmetric' | 'independent' }>;
-export type PathGeometry = Readonly<{ kind: 'path'; closed: boolean; nodes: readonly PathNode[] }>;
+export type PathGeometry = Readonly<{ kind: 'path'; closed: boolean; nodes: readonly PathNode[]; subpaths?: readonly (readonly PathNode[])[] }>;
 export type Geometry = RectGeometry | EllipseGeometry | PathGeometry;
 
 export type VectorObject = Readonly<{

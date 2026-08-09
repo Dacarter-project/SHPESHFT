@@ -35,10 +35,9 @@ export function localBounds(object: VectorObject): Bounds {
   if (object.geometry.kind === 'rect') return { x: 0, y: 0, width: object.geometry.width, height: object.geometry.height };
   if (object.geometry.kind === 'ellipse') return { x: -object.geometry.rx, y: -object.geometry.ry, width: object.geometry.rx * 2, height: object.geometry.ry * 2 };
   const points: Array<{ x:number; y:number }> = [];
-  const segments = object.geometry.closed ? object.geometry.nodes.length : Math.max(0, object.geometry.nodes.length - 1);
   const roots = (p0:number, p1:number, p2:number, p3:number) => { const a = -p0 + 3*p1 - 3*p2 + p3, b = 2*(p0 - 2*p1 + p2), c = p1 - p0, result:number[] = []; if (Math.abs(a) < 1e-9) { if (Math.abs(b) > 1e-9) result.push(-c/b); } else { const d = b*b - 4*a*c; if (d >= 0) { result.push((-b + Math.sqrt(d))/(2*a), (-b - Math.sqrt(d))/(2*a)); } } return result.filter((t) => t > 0 && t < 1); };
   const value = (p0:number,p1:number,p2:number,p3:number,t:number) => { const u=1-t; return u*u*u*p0+3*u*u*t*p1+3*u*t*t*p2+t*t*t*p3; };
-  for (let index=0; index<segments; index+=1) { const {p0,p1,p2,p3}=cubicPoints(object.geometry.nodes,index), ts = new Set([0,1,...roots(p0.x,p1.x,p2.x,p3.x),...roots(p0.y,p1.y,p2.y,p3.y)]); for (const t of ts) points.push({x:value(p0.x,p1.x,p2.x,p3.x,t),y:value(p0.y,p1.y,p2.y,p3.y,t)}); }
+  for(const [pathIndex,nodes] of [object.geometry.nodes,...(object.geometry.subpaths??[])].entries()){const closed=pathIndex===0?object.geometry.closed:true,segments=closed?nodes.length:Math.max(0,nodes.length-1);for (let index=0; index<segments; index+=1) { const {p0,p1,p2,p3}=cubicPoints(nodes,index), ts = new Set([0,1,...roots(p0.x,p1.x,p2.x,p3.x),...roots(p0.y,p1.y,p2.y,p3.y)]); for (const t of ts) points.push({x:value(p0.x,p1.x,p2.x,p3.x,t),y:value(p0.y,p1.y,p2.y,p3.y,t)}); }}
   if (!points.length) points.push(...object.geometry.nodes.map((node) => node.anchor));
   const xs = points.map((point) => point.x), ys = points.map((point) => point.y);
   return { x: Math.min(...xs), y: Math.min(...ys), width: Math.max(...xs) - Math.min(...xs), height: Math.max(...ys) - Math.min(...ys) };
@@ -46,17 +45,7 @@ export function localBounds(object: VectorObject): Bounds {
 
 export function tracePath(context: CanvasRenderingContext2D, object: VectorObject): void {
   if (object.geometry.kind !== 'path' || object.geometry.nodes.length === 0) return;
-  const nodes = object.geometry.nodes;
-  context.moveTo(nodes[0].anchor.x, nodes[0].anchor.y);
-  const last = object.geometry.closed ? nodes.length : nodes.length - 1;
-  for (let index = 0; index < last; index += 1) {
-    const from = nodes[index];
-    const to = nodes[(index + 1) % nodes.length];
-    const cp1 = from.out ? { x: from.anchor.x + from.out.x, y: from.anchor.y + from.out.y } : from.anchor;
-    const cp2 = to.in ? { x: to.anchor.x + to.in.x, y: to.anchor.y + to.in.y } : to.anchor;
-    context.bezierCurveTo(cp1.x, cp1.y, cp2.x, cp2.y, to.anchor.x, to.anchor.y);
-  }
-  if (object.geometry.closed) context.closePath();
+  for(const [pathIndex,nodes] of [object.geometry.nodes,...(object.geometry.subpaths??[])].entries()){if(!nodes.length)continue;const closed=pathIndex===0?object.geometry.closed:true;context.moveTo(nodes[0].anchor.x,nodes[0].anchor.y);const last=closed?nodes.length:nodes.length-1;for(let index=0;index<last;index+=1){const from=nodes[index],to=nodes[(index+1)%nodes.length],cp1=from.out?{x:from.anchor.x+from.out.x,y:from.anchor.y+from.out.y}:from.anchor,cp2=to.in?{x:to.anchor.x+to.in.x,y:to.anchor.y+to.in.y}:to.anchor;context.bezierCurveTo(cp1.x,cp1.y,cp2.x,cp2.y,to.anchor.x,to.anchor.y);}if(closed)context.closePath();}
 }
 
 export function hitTest(object: VectorObject, worldX: number, worldY: number): boolean {
@@ -70,7 +59,7 @@ export function objectOutlinePoints(object: VectorObject): Array<{x:number;y:num
   const local:Array<{x:number;y:number}>=[];
   if(object.geometry.kind==='rect') local.push({x:0,y:0},{x:object.geometry.width,y:0},{x:object.geometry.width,y:object.geometry.height},{x:0,y:object.geometry.height});
   else if(object.geometry.kind==='ellipse') for(let index=0;index<64;index+=1){const angle=index*Math.PI/32;local.push({x:Math.cos(angle)*object.geometry.rx,y:Math.sin(angle)*object.geometry.ry});}
-  else {const segments=object.geometry.closed?object.geometry.nodes.length:Math.max(0,object.geometry.nodes.length-1);for(let index=0;index<segments;index+=1){const{p0,p1,p2,p3}=cubicPoints(object.geometry.nodes,index);for(let step=0;step<16;step+=1){const t=step/16,u=1-t;local.push({x:u*u*u*p0.x+3*u*u*t*p1.x+3*u*t*t*p2.x+t*t*t*p3.x,y:u*u*u*p0.y+3*u*u*t*p1.y+3*u*t*t*p2.y+t*t*t*p3.y});}}}
+  else {for(const [pathIndex,nodes] of [object.geometry.nodes,...(object.geometry.subpaths??[])].entries()){const closed=pathIndex===0?object.geometry.closed:true,segments=closed?nodes.length:Math.max(0,nodes.length-1);for(let index=0;index<segments;index+=1){const{p0,p1,p2,p3}=cubicPoints(nodes,index);for(let step=0;step<16;step+=1){const t=step/16,u=1-t;local.push({x:u*u*u*p0.x+3*u*u*t*p1.x+3*u*t*t*p2.x+t*t*t*p3.x,y:u*u*u*p0.y+3*u*u*t*p1.y+3*u*t*t*p2.y+t*t*t*p3.y});}}}}
   return local.map((point)=>localToWorld(object,point.x,point.y));
 }
 

@@ -15,7 +15,7 @@
   },
   "dependencies": {
     "dexie": "4.2.0",
-    "polygon-clipping": "0.15.7",
+    "paper": "0.12.18",
     "svelte": "5.38.7"
   },
   "devDependencies": {

@@ -41,8 +41,8 @@ export class MovePathNodeCommand implements Command {
   private set(document: ShpeshftDocument, node: PathNode): ShpeshftDocument {
     const object = document.objects[this.objectId];
     if (!object || object.geometry.kind !== 'path') return document;
-    const nodes = object.geometry.nodes.map((candidate) => candidate.id === this.nodeId ? node : candidate);
-    return touch({ ...document, objects: { ...document.objects, [this.objectId]: { ...object, geometry: { ...object.geometry, nodes } } } });
+    const nodes = object.geometry.nodes.map((candidate) => candidate.id === this.nodeId ? node : candidate),subpaths=object.geometry.subpaths?.map((path)=>path.map((candidate)=>candidate.id===this.nodeId?node:candidate));
+    return touch({ ...document, objects: { ...document.objects, [this.objectId]: { ...object, geometry: { ...object.geometry, nodes, ...(subpaths?{subpaths}:{}) } } } });
   }
 }
 

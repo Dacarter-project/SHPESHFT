@@ -1,4 +1,6 @@
 import { describe,expect,it } from 'vitest';
-import { createDocument,createRectangle } from './document';
+import { createDocument,createEllipse,createRectangle } from './document';
 import { exportSvg } from './svg';
+import { booleanShapes } from '../engine/boolean';
 it('serializes standards-compatible non-scaling fill and stroke properties',()=>{const object=createRectangle(10,20), styled={...object,style:{...object.style,strokeEnabled:true,strokeColor:'#123456',strokeWidth:12,strokeOpacity:.4,strokeDashArray:[24,12],strokeLineCap:'round' as const,strokeLineJoin:'bevel' as const}},doc=createDocument();const svg=exportSvg({...doc,objects:{[styled.id]:styled},order:[styled.id]});expect(svg).toContain('stroke="#123456"');expect(svg).toContain('stroke-dasharray="24 12"');expect(svg).toContain('stroke-linecap="round"');expect(svg).toContain('stroke-linejoin="bevel"');expect(svg).toContain('vector-effect="non-scaling-stroke"');});
+it('exports compound authoring paths as a small number of cubic commands',async()=>{const doc=createDocument(),outer=createEllipse(200,200),inner={...createEllipse(200,200),geometry:{kind:'ellipse' as const,rx:40,ry:40}},result=(await booleanShapes([outer,inner],'difference'))[0],svg=exportSvg({...doc,objects:{[result.id]:result},order:[result.id]});expect((svg.match(/ C /g)??[]).length).toBeGreaterThan(0);expect((svg.match(/ C /g)??[]).length).toBeLessThanOrEqual(12);expect((svg.match(/M /g)??[]).length).toBe(2);});
