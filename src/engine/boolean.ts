@@ -1,4 +1,7 @@
 import { defaultStyle, identityTransform, type PathNode, type VectorObject } from '../core/document';
+import { cubicPoints } from './bezier';
+import { localToWorld } from './geometry';
+import polygonClipping from 'polygon-clipping';
 
 type Cell = { x0: number; x1: number; y0: number; y1: number };
 type Edge = { from: [number, number]; to: [number, number] };
@@ -6,6 +9,21 @@ type Edge = { from: [number, number]; to: [number, number] };
 const key = ([x, y]: [number, number]) => `${x},${y}`;
 
 export type BooleanOperation = 'union' | 'difference' | 'intersect';
+
+function outline(object:VectorObject):polygonClipping.Polygon {
+  const points:polygonClipping.Pair[]=[];
+  if(object.geometry.kind==='rect')for(const [x,y] of [[0,0],[object.geometry.width,0],[object.geometry.width,object.geometry.height],[0,object.geometry.height]] as const){const point=localToWorld(object,x,y);points.push([point.x,point.y]);}
+  else if(object.geometry.kind==='ellipse')for(let index=0;index<48;index+=1){const angle=index*Math.PI/24,point=localToWorld(object,Math.cos(angle)*object.geometry.rx,Math.sin(angle)*object.geometry.ry);points.push([point.x,point.y]);}
+  else {const segments=object.geometry.closed?object.geometry.nodes.length:Math.max(0,object.geometry.nodes.length-1);for(let index=0;index<segments;index+=1){const{p0,p1,p2,p3}=cubicPoints(object.geometry.nodes,index);for(let step=0;step<16;step+=1){const t=step/16,u=1-t,point=localToWorld(object,u*u*u*p0.x+3*u*u*t*p1.x+3*u*t*t*p2.x+t*t*t*p3.x,u*u*u*p0.y+3*u*u*t*p1.y+3*u*t*t*p2.y+t*t*t*p3.y);points.push([point.x,point.y]);}}}
+  if(points.length)points.push([...points[0]] as polygonClipping.Pair);return[points];
+}
+
+/** Boolean geometry for any closed SHPESHFT artwork outline, returned as editable paths. */
+export function booleanShapes(objects:readonly VectorObject[],operation:BooleanOperation):VectorObject[]{
+  if(objects.length<2)return[];const polygons=objects.map(outline);let result:polygonClipping.MultiPolygon;
+  try{result=operation==='union'?polygonClipping.union(polygons[0],...polygons.slice(1)):operation==='difference'?polygonClipping.difference(polygons[0],...polygons.slice(1)):polygonClipping.intersection(polygons[0],...polygons.slice(1));}catch{return[];}
+  return result.flatMap((polygon,polygonIndex)=>{const ring=polygon[0];if(!ring||ring.length<4)return[];const points=ring.slice(0,-1),nodes:PathNode[]=points.map(([x,y])=>({id:crypto.randomUUID(),anchor:{x,y},in:null,out:null,kind:'corner'}));return[{id:crypto.randomUUID(),name:`${operation==='union'?'Combine':operation==='difference'?'Cut Out':'Intersect'}${result.length>1?` ${polygonIndex+1}`:''}`,geometry:{kind:'path' as const,closed:true,nodes},transform:identityTransform(),style:{...objects[0].style},visible:true,locked:false,parentId:null}];});
+}
 
 /** Exact Boolean geometry for compatible unrotated rectangles, committed as an editable outline. */
 export function booleanRectangles(objects: readonly VectorObject[], operation: BooleanOperation): VectorObject | null {

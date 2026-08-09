@@ -3,7 +3,7 @@
   import { AddObjectCommand, History, MovePathNodeCommand, ReplaceObjectsCommand, TransformObjectCommand } from './core/commands';
   import { createDocument, createEllipse, createRectangle, createTriangle, type PathNode, type ShpeshftDocument, type Style, type Transform, type VectorObject } from './core/document';
   import { exportSvg as serializeSvg } from './core/svg';
-  import { booleanRectangles, type BooleanOperation } from './engine/boolean';
+  import { booleanShapes, type BooleanOperation } from './engine/boolean';
   import { createBenchmarkDocument, createNodeBenchmarkDocument, createPathBenchmarkDocument } from './engine/benchmark';
   import { cubicPoints, nearestCubicPoint, splitCubicSegment } from './engine/bezier';
   import { hitTest, localBounds, localCenter, localToWorld, objectCenter, tracePath, worldToLocal } from './engine/geometry';
@@ -70,7 +70,6 @@
     const after = Object.fromEntries(selectedIds.map((id) => [id, mapper(document.objects[id])]));
     execute(new ReplaceObjectsCommand(before, after, document.order, document.order)); status = label;
   }
-  function setOpacity(value: number) { updateSelected((object) => ({ ...object, style: { ...object.style, opacity: value } }), `Opacity ${Math.round(value * 100)}%`); }
   function setStyle(patch: Partial<Style>, label: string) { updateSelected((object) => ({ ...object, style: { ...object.style, ...patch } }), label); }
   function strokePattern(kind: 'solid'|'dash'|'dot') { const width = selectedId ? document.objects[selectedId]?.style.strokeWidth ?? 2 : 2; setStyle(kind === 'solid' ? { strokeDashArray: [] } : kind === 'dash' ? { strokeDashArray: [width * 4, width * 3] } : { strokeDashArray: [.01, width * 2.5], strokeLineCap: 'round' }, `${kind} stroke`); }
   function cycleCap() { const cap = selectedId ? document.objects[selectedId]?.style.strokeLineCap : 'butt'; setStyle({ strokeLineCap: cap === 'round' ? 'butt' : 'round' }, 'Stroke cap'); }
@@ -79,8 +78,7 @@
   function previewStyle(patch: Partial<Style>) { beginStyleGesture(); const objects = { ...document.objects }; for (const id of selectedIds) objects[id] = { ...objects[id], style: { ...objects[id].style, ...patch } }; document = { ...document, objects }; draw(); }
   function commitStyleGesture(label: string) { if (!styleGestureBefore) return; const before = styleGestureBefore, after = Object.fromEntries(selectedIds.map((id) => [id, document.objects[id]])); document = { ...document, objects: { ...document.objects, ...before } }; styleGestureBefore = null; execute(new ReplaceObjectsCommand(before, after, document.order, document.order)); status = label; }
   function reorder(direction: -1 | 1) {
-    if (!selectedId) return; const from = document.order.indexOf(selectedId), to = Math.max(0, Math.min(document.order.length - 1, from + direction)); if (from === to) return;
-    const order = [...document.order]; order.splice(to, 0, order.splice(from, 1)[0]); execute(new ReplaceObjectsCommand({}, {}, document.order, order)); status = direction > 0 ? 'Moved forward' : 'Moved backward';
+    if (!selectedIds.length) return;const order=[...document.order],selected=new Set(selectedIds),indices=direction>0?Array.from({length:order.length},(_,i)=>order.length-1-i):Array.from({length:order.length},(_,i)=>i);let changed=false;for(const index of indices){if(!selected.has(order[index]))continue;const next=index+direction;if(next<0||next>=order.length||selected.has(order[next]))continue;[order[index],order[next]]=[order[next],order[index]];changed=true;}if(!changed)return;execute(new ReplaceObjectsCommand({}, {}, document.order, order));status=direction>0?'Moved selection forward':'Moved selection backward';
   }
   function rotateSelection() {
     orientedControls = true;
@@ -101,10 +99,8 @@
   function groupSelection() { if (selectedIds.length > 1) { const groupId = crypto.randomUUID(); updateSelected((object) => ({ ...object, parentId: groupId }), 'Grouped'); actionsOpen=false; } }
   function ungroupSelection() { updateSelected((object) => ({ ...object, parentId: null }), 'Ungrouped'); actionsOpen=false; }
   function booleanSelection(operation: BooleanOperation) {
-    const result = booleanRectangles(selectedIds.map((id) => document.objects[id]).filter(Boolean), operation); if (!result) { status = `${operation} needs overlapping unrotated rectangles`; return; }
-    const before = Object.fromEntries(selectedIds.map((id) => [id, document.objects[id]])); const after = Object.fromEntries([...selectedIds.map((id) => [id, null] as const), [result.id, result]]);
-    const first = Math.min(...selectedIds.map((id) => document.order.indexOf(id))); const order = document.order.filter((id) => !selectedIds.includes(id)); order.splice(first, 0, result.id);
-    execute(new ReplaceObjectsCommand(before, after, document.order, order)); selectedId = result.id; selectedIds = [result.id]; actionsOpen=false; status = `${result.name} created`; draw();
+    const results=booleanShapes(selectedIds.map((id)=>document.objects[id]).filter(Boolean),operation);if(!results.length){status=`${operation} produced no overlapping artwork`;return;}
+    const before=Object.fromEntries(selectedIds.map((id)=>[id,document.objects[id]])),after=Object.fromEntries([...selectedIds.map((id)=>[id,null] as const),...results.map((result)=>[result.id,result] as const)]),first=Math.min(...selectedIds.map((id)=>document.order.indexOf(id))),order=document.order.filter((id)=>!selectedIds.includes(id));order.splice(first,0,...results.map((result)=>result.id));execute(new ReplaceObjectsCommand(before,after,document.order,order));selectedIds=results.map((result)=>result.id);selectedId=selectedIds.at(-1)??null;actionsOpen=false;status=`${results[0].name} created`;draw();
   }
 
   function editablePath(object:VectorObject):VectorObject {
@@ -175,7 +171,6 @@
   function selectionHandle() { return selectionControls()?.bottomRight ?? null; }
   function selectedAt(x: number, y: number) { return selectedIds.some((id) => hitTest(document.objects[id], x, y)); }
   function selectionForObject(id: string) { const parentId = document.objects[id]?.parentId; return parentId ? document.order.filter((candidate) => document.objects[candidate]?.parentId === parentId) : [id]; }
-  function booleanCompatible() { return selectedIds.length > 1 && selectedIds.every((id) => { const object = document.objects[id]; return object?.geometry.kind === 'rect' && object.transform.rotation === 0; }); }
   function groupedSelection() { return selectedIds.length > 1 && selectedIds.every((id) => document.objects[id]?.parentId && document.objects[id].parentId === document.objects[selectedIds[0]]?.parentId); }
   function snapMove(dx: number, dy: number, bounds = worldBounds()) {
     if (!bounds) return { dx, dy }; const threshold = 10 / view.scale, others = document.order.filter((id) => !selectedIds.includes(id)).map((id) => worldBounds([id])).filter(Boolean) as Array<{x:number;y:number;width:number;height:number}>;
@@ -307,10 +302,11 @@
       <button class="show-tools" on:click={() => toolsVisible = true} aria-label="Show selection tools">Tools</button>
     {:else}
       <nav class={styleMode ? 'context-dock style-dock' : actionsOpen ? 'context-dock' : 'context-dock object-dock'} aria-label={styleMode ? 'Fill and Stroke' : 'Object actions'}>
-        {#if styleMode && selectedIds.length === 1}
+        {#if styleMode && selectedIds.length > 0}
           <button class="done" on:click={() => styleMode = false}>Done</button>
           <label class="toggle"><input type="checkbox" checked={document.objects[selectedId]?.style.fillEnabled} on:change={(event) => setStyle({ fillEnabled: event.currentTarget.checked }, event.currentTarget.checked ? 'Fill on' : 'Fill off')} />Fill</label>
           {#if document.objects[selectedId]?.style.fillEnabled}<input class="colour" aria-label="Fill colour" type="color" value={document.objects[selectedId]?.style.fill} on:change={(event) => setStyle({ fill: event.currentTarget.value }, 'Fill colour')} />{/if}
+          {#if document.objects[selectedId]?.style.fillEnabled}<label>Fill α <input aria-label="Fill opacity" type="range" min="0" max="1" step=".05" value={document.objects[selectedId]?.style.fillOpacity} on:pointerdown={beginStyleGesture} on:input={(event) => previewStyle({ fillOpacity: Number(event.currentTarget.value) })} on:change={() => commitStyleGesture('Fill opacity')} /></label>{/if}
           <label class="toggle"><input type="checkbox" checked={document.objects[selectedId]?.style.strokeEnabled} on:change={(event) => setStyle({ strokeEnabled: event.currentTarget.checked }, event.currentTarget.checked ? 'Stroke on' : 'Stroke off')} />Stroke</label>
           {#if document.objects[selectedId]?.style.strokeEnabled}
             <input class="colour" aria-label="Stroke colour" type="color" value={document.objects[selectedId]?.style.strokeColor} on:change={(event) => setStyle({ strokeColor: event.currentTarget.value }, 'Stroke colour')} />
@@ -322,10 +318,11 @@
             <button on:click={cycleJoin}>Join {document.objects[selectedId]?.style.strokeLineJoin}</button>
             <label>Stroke α <input aria-label="Stroke opacity" type="range" min="0" max="1" step=".05" value={document.objects[selectedId]?.style.strokeOpacity} on:pointerdown={beginStyleGesture} on:input={(event) => previewStyle({ strokeOpacity: Number(event.currentTarget.value) })} on:change={() => commitStyleGesture('Stroke opacity')} /></label>
           {/if}
+          <label>Opacity <input aria-label="Object opacity" type="range" min=".05" max="1" step=".05" value={document.objects[selectedId]?.style.opacity ?? 1} on:pointerdown={beginStyleGesture} on:input={(event) => previewStyle({ opacity: Number(event.currentTarget.value) })} on:change={() => commitStyleGesture('Object opacity')} /></label>
         {:else}
         {#if actionsOpen}
           {#if selectedIds.length > 1 && !groupedSelection()}<button on:click={groupSelection}>Group</button>{/if}
-          {#if booleanCompatible()}<button on:click={() => booleanSelection('union')}>Combine</button><button on:click={() => booleanSelection('difference')}>Cut Out</button><button on:click={() => booleanSelection('intersect')}>Intersect</button>{/if}
+          {#if selectedIds.length > 1}<button on:click={() => booleanSelection('union')}>Combine</button><button on:click={() => booleanSelection('difference')}>Cut Out</button><button on:click={() => booleanSelection('intersect')}>Intersect</button>{/if}
           {#if groupedSelection()}<button on:click={ungroupSelection}>Ungroup</button>{/if}
         {:else}
           <button class="tool-button" on:click={() => { toolsVisible=false; helpOpen=false; }} aria-label="Hide selection tools"><span>—</span><small>Hide</small></button>
@@ -335,7 +332,7 @@
           <button class="tool-button" on:click={duplicateSelection} aria-label="Duplicate"><span>▣</span><small>Duplicate</small></button>
           <button class="tool-button" on:click={rotateSelection} aria-label="Rotate 90 degrees"><span>↻</span><small>Rotate</small></button>
           <div class="layer-tools" aria-label="Layer order"><button on:click={() => reorder(1)} aria-label="Move forward"><span>▰</span><small>Front</small></button><button on:click={() => reorder(-1)} aria-label="Move backward"><span>▱</span><small>Back</small></button></div>
-          {#if selectedIds.length === 1}<button class="tool-button" on:click={() => styleMode = true} aria-label="Fill and stroke"><span>◐</span><small>Style</small></button>{/if}
+          <button class="tool-button" on:click={() => styleMode = true} aria-label="Fill and stroke"><span>◐</span><small>Style</small></button>
           {#if multiMode}<button class="tool-button active" on:click={() => { multiMode = false; status = 'Selection'; }}><span>✓</span><small>Done</small></button>{:else}<button class="tool-button" on:click={() => multiMode = true} aria-label="Add to selection"><span>⊕</span><small>Select</small></button>{/if}
         {/if}
         {/if}

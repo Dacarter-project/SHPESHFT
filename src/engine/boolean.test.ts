@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { createRectangle } from '../core/document';
-import { booleanRectangles, unionRectangles } from './boolean';
+import { createEllipse, createRectangle, createTriangle } from '../core/document';
+import { booleanRectangles, booleanShapes, unionRectangles } from './boolean';
 
 describe('rectangle union', () => {
   it('commits overlapping rectangles to one editable outline', () => {
@@ -21,4 +21,9 @@ describe('rectangle union', () => {
     expect(intersection.geometry.nodes).toHaveLength(4);
     expect(difference.geometry.nodes.length).toBeGreaterThanOrEqual(4);
   });
+});
+
+describe('shape-independent Boolean operations',()=>{
+  it('combines different geometry types into editable paths',()=>{const triangle=createTriangle(0,0),ellipse=createEllipse(90,80),results=booleanShapes([triangle,ellipse],'union');expect(results.length).toBeGreaterThan(0);expect(results.every((result)=>result.geometry.kind==='path')).toBe(true);});
+  it('intersects rotated artwork without checking its original primitive type',()=>{const rectangle=createRectangle(0,0),ellipse=createEllipse(100,70),rotated={...rectangle,transform:{...rectangle.transform,rotation:Math.PI/8}},results=booleanShapes([rotated,ellipse],'intersect');expect(results.length).toBeGreaterThan(0);expect(results[0].geometry.kind).toBe('path');});
 });
