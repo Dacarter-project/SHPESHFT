@@ -1,5 +1,6 @@
 import type { Point, Transform,VectorObject } from '../core/document';
 import { localBounds, localCenter, localToWorld, objectCenter } from './geometry';
+export type Corner = 'topLeft'|'topRight'|'bottomRight'|'bottomLeft';
 export const exceedsDragThreshold = (dx: number, dy: number, threshold: number) => Math.hypot(dx,dy) > threshold;
 export function transformAround(object:VectorObject,before:Transform,pivot:{x:number;y:number},scale:number,rotationDelta:number):Transform{const source={...object,transform:before},center=objectCenter(source),local=localCenter(source),dx=center.x-pivot.x,dy=center.y-pivot.y,cos=Math.cos(rotationDelta),sin=Math.sin(rotationDelta),nextCenter={x:pivot.x+(dx*cos-dy*sin)*scale,y:pivot.y+(dx*sin+dy*cos)*scale},scaleX=before.scaleX*scale,scaleY=before.scaleY*scale;return{...before,x:nextCenter.x-local.x*scaleX,y:nextCenter.y-local.y*scaleY,scaleX,scaleY,rotation:before.rotation+rotationDelta};}
 
@@ -15,13 +16,18 @@ export function rebaseAfterGeometryChange(before: VectorObject, after: VectorObj
   return { ...after, transform: transformKeepingLocalPoint(after, transform, fixedLocal, fixedWorld, transform.scaleX, transform.scaleY) };
 }
 
-export function resizeFromLocalCorner(object: VectorObject, before: Transform, world: Point, fixedCorner: 'bottomRight', pointerStart?:Point): Transform {
+const cornerPoint=(object:VectorObject,corner:Corner)=>{const bounds=localBounds(object);return{x:corner==='topLeft'||corner==='bottomLeft'?bounds.x:bounds.x+bounds.width,y:corner==='topLeft'||corner==='topRight'?bounds.y:bounds.y+bounds.height};};
+const oppositeCorner=(corner:Corner):Corner=>({topLeft:'bottomRight',topRight:'bottomLeft',bottomRight:'topLeft',bottomLeft:'topRight'} as const)[corner];
+
+export function resizeFromLocalCorner(object: VectorObject, before: Transform, world: Point, movingCorner: Corner, pointerStart?:Point): Transform {
   if(pointerStart&&world.x===pointerStart.x&&world.y===pointerStart.y)return before;
-  const source={...object,transform:before},bounds=localBounds(source),fixedLocal={x:bounds.x+bounds.width,y:bounds.y+bounds.height},movingLocal={x:bounds.x,y:bounds.y},fixedWorld=localToWorld(source,fixedLocal.x,fixedLocal.y),cos=Math.cos(before.rotation),sin=Math.sin(before.rotation),dx=world.x-fixedWorld.x,dy=world.y-fixedWorld.y;
-  const localDx=movingLocal.x-fixedLocal.x,localDy=movingLocal.y-fixedLocal.y,deltaX=pointerStart?(world.x-pointerStart.x)*cos+(world.y-pointerStart.y)*sin:0,deltaY=pointerStart?-(world.x-pointerStart.x)*sin+(world.y-pointerStart.y)*cos:0;
-  const projectedX=pointerStart?localDx*before.scaleX+deltaX:dx*cos+dy*sin,projectedY=pointerStart?localDy*before.scaleY+deltaY:-dx*sin+dy*cos,rawScaleX=projectedX/localDx,rawScaleY=projectedY/localDy;
-  const clamp=(value:number,previous:number)=>Math.abs(value)<.08?(Math.sign(previous)||1)*.08:value;
-  return transformKeepingLocalPoint(object,before,fixedLocal,fixedWorld,clamp(rawScaleX,before.scaleX),clamp(rawScaleY,before.scaleY));
+  const source={...object,transform:before},movingLocal=cornerPoint(source,movingCorner),fixedLocal=cornerPoint(source,oppositeCorner(movingCorner)),movingWorld=localToWorld(source,movingLocal.x,movingLocal.y),fixedWorld=localToWorld(source,fixedLocal.x,fixedLocal.y),start=pointerStart??movingWorld,initial={x:movingWorld.x-fixedWorld.x,y:movingWorld.y-fixedWorld.y},target={x:initial.x+world.x-start.x,y:initial.y+world.y-start.y},denominator=initial.x*initial.x+initial.y*initial.y;
+  let factor=denominator<1e-9?1:(target.x*initial.x+target.y*initial.y)/denominator;if(Math.abs(factor)<.08)factor=(Math.sign(factor)||1)*.08;
+  return transformKeepingLocalPoint(object,before,fixedLocal,fixedWorld,before.scaleX*factor,before.scaleY*factor);
+}
+
+export function resizeProportionallyAroundWorld(object:VectorObject,before:Transform,fixedWorld:Point,movingStart:Point,world:Point):Transform{
+  if(world.x===movingStart.x&&world.y===movingStart.y)return before;const initial={x:movingStart.x-fixedWorld.x,y:movingStart.y-fixedWorld.y},target={x:world.x-fixedWorld.x,y:world.y-fixedWorld.y},denominator=initial.x*initial.x+initial.y*initial.y;let factor=denominator<1e-9?1:(target.x*initial.x+target.y*initial.y)/denominator;if(Math.abs(factor)<.08)factor=(Math.sign(factor)||1)*.08;return transformAround(object,before,fixedWorld,factor,0);
 }
 
 export function resizeAlongLocalEdge(object: VectorObject, before: Transform, edge: 'top'|'right'|'bottom'|'left', world: Point, fixedCorner?: 'bottomRight', pointerStart?:Point): Transform {
