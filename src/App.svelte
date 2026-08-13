@@ -1,18 +1,19 @@
 <script lang="ts">
   import { onMount } from 'svelte';
-  import { AddObjectCommand, History, MovePathNodeCommand, ReplaceObjectsCommand, TransformObjectCommand } from './core/commands';
+  import { AddObjectCommand, History, ReplaceObjectsCommand, TransformObjectCommand } from './core/commands';
   import { createDocument, createEllipse, createRectangle, createTriangle, type PathNode, type ShpeshftDocument, type Style, type Transform, type VectorObject } from './core/document';
   import { exportSvg as serializeSvg } from './core/svg';
   import { booleanShapes, type BooleanOperation } from './engine/boolean';
   import { createBenchmarkDocument, createNodeBenchmarkDocument, createPathBenchmarkDocument } from './engine/benchmark';
   import { cubicPoints, nearestCubicPoint, splitCubicSegment } from './engine/bezier';
+  import { toEditablePath } from './engine/editable';
   import { hitTest, localBounds, localCenter, localToWorld, objectCenter, objectIntersectsRect, tracePath, worldToLocal } from './engine/geometry';
   import { fitWorkspace, zoomAt, zoomFromAnchor } from './engine/viewport';
-  import { exceedsDragThreshold, resizeAlongLocalEdge, transformAround } from './engine/transform';
+  import { exceedsDragThreshold, rebaseAfterGeometryChange, resizeAlongLocalEdge, resizeFromLocalCorner, transformAround } from './engine/transform';
   import { loadLatestProject, saveProject } from './storage/database';
 
   type Edge = 'top' | 'right' | 'bottom' | 'left';
-  type TransformDrag = { id: string; kind: 'move' | 'primary' | 'dimension'; before: Transform; beforeSelection?: Record<string, Transform>; baseBounds?: {x:number;y:number;width:number;height:number}; pivot?: { x:number; y:number }; startWorldX: number; startWorldY: number; startDistance?: number; startAngle?: number; edge?: Edge; moved?: boolean; fromOutside?: boolean };
+  type TransformDrag = { id: string; kind: 'move' | 'primary' | 'dimension' | 'corner'; before: Transform; beforeSelection?: Record<string, Transform>; baseBounds?: {x:number;y:number;width:number;height:number}; pivot?: { x:number; y:number }; startWorldX: number; startWorldY: number; startDistance?: number; startAngle?: number; edge?: Edge; moved?: boolean; fromOutside?: boolean };
   type Guide = { axis:'x'; value:number } | { axis:'y'; value:number } | { axis:'line'; from:{x:number;y:number}; to:{x:number;y:number} };
 
   let canvas: HTMLCanvasElement;
@@ -35,7 +36,7 @@
   let status = 'Ready';
   let view = { x: 0, y: 0, scale: .55 };
   let drag: TransformDrag | null = null;
-  let nodeDrag: null | { objectId: string; nodeId: string; part: 'anchor' | 'in' | 'out'; before: PathNode; snapReferences:Array<{x:number;y:number}> } = null;
+  let nodeDrag: null | { objectId: string; nodeId: string; part: 'anchor' | 'in' | 'out'; before: PathNode; beforeObject:VectorObject; snapReferences:Array<{x:number;y:number}> } = null;
   let pan: null | { x: number; y: number; viewX: number; viewY: number; moved: boolean } = null;
   let lasso: null | { start:{x:number;y:number}; current:{x:number;y:number}; ids:string[] } = null;
   let pinch: null | { distance: number; scale: number; anchorX: number; anchorY: number } = null;
@@ -47,7 +48,7 @@
   const pointers = new Map<number, { x: number; y: number }>();
   const history = new History();
 
-  const execute = (command: AddObjectCommand | TransformObjectCommand | MovePathNodeCommand | ReplaceObjectsCommand) => {
+  const execute = (command: AddObjectCommand | TransformObjectCommand | ReplaceObjectsCommand) => {
     document = history.execute(document, command); scheduleSave(); draw();
   };
 
@@ -117,18 +118,12 @@
     const groupId=results.length>1?crypto.randomUUID():null,combined=results.map((result)=>({...result,parentId:groupId})),before=Object.fromEntries(selectedIds.map((id)=>[id,document.objects[id]])),after=Object.fromEntries([...selectedIds.map((id)=>[id,null] as const),...combined.map((result)=>[result.id,result] as const)]),first=Math.min(...selectedIds.map((id)=>document.order.indexOf(id))),order=document.order.filter((id)=>!selectedIds.includes(id));order.splice(first,0,...combined.map((result)=>result.id));execute(new ReplaceObjectsCommand(before,after,document.order,order));selectedIds=combined.map((result)=>result.id);selectedId=selectedIds.at(-1)??null;actionsOpen=false;status=combined.length>1?'Combined as one group':`${combined[0].name} created`;draw();
   }
 
-  function editablePath(object:VectorObject):VectorObject {
-    if(object.geometry.kind==='path')return object;
-    const node=(anchor:{x:number;y:number},incoming:{x:number;y:number}|null=null,outgoing:{x:number;y:number}|null=null):PathNode=>({id:crypto.randomUUID(),anchor,in:incoming,out:outgoing,kind:incoming||outgoing?'symmetric':'corner'});
-    if(object.geometry.kind==='rect'){const{width,height}=object.geometry;return{...object,geometry:{kind:'path',closed:true,nodes:[node({x:0,y:0}),node({x:width,y:0}),node({x:width,y:height}),node({x:0,y:height})]}};}
-    const{rx,ry}=object.geometry,k=.5522847498;return{...object,geometry:{kind:'path',closed:true,nodes:[node({x:rx,y:0},{x:0,y:-k*ry},{x:0,y:k*ry}),node({x:0,y:ry},{x:k*rx,y:0},{x:-k*rx,y:0}),node({x:-rx,y:0},{x:0,y:k*ry},{x:0,y:-k*ry}),node({x:0,y:-ry},{x:-k*rx,y:0},{x:k*rx,y:0})]}};
-  }
-  function enterEditMode() { if (!selectedId) return; const before=document.objects[selectedId];if(!before||before.locked){status='Unlock to edit nodes';return;}const object=editablePath(before);if(object!==before)execute(new ReplaceObjectsCommand({[before.id]:before},{[object.id]:object},document.order,document.order)); editMode=true;multiMode=false;selectedNodeId=object.geometry.kind==='path'?object.geometry.nodes[0]?.id??null:null;status='Shape Edit';draw(); }
+  function enterEditMode() { if (!selectedId) return; const before=document.objects[selectedId];if(!before||before.locked){status='Unlock to edit nodes';return;}const object=toEditablePath(before);if(object!==before)execute(new ReplaceObjectsCommand({[before.id]:before},{[object.id]:object},document.order,document.order)); editMode=true;multiMode=false;selectedNodeId=object.geometry.kind==='path'?object.geometry.nodes[0]?.id??null:null;status='Shape Edit';draw(); }
   function exitEditMode() { editMode = false; selectedNodeId = null; status = 'Selection'; draw(); }
   function pathNodeSets(object:VectorObject){return object.geometry.kind==='path'?[object.geometry.nodes,...(object.geometry.subpaths??[])]:[];}
   function updatePathNodes(nodes: readonly PathNode[], label: string,pathIndex=0) {
     if (!selectedId) return; const object = document.objects[selectedId]; if (object.geometry.kind !== 'path') return;
-    const sets=pathNodeSets(object);sets[pathIndex]=nodes;const after = { ...object, geometry: { ...object.geometry, nodes:sets[0],...(sets.length>1?{subpaths:sets.slice(1)}:{subpaths:undefined}) } };
+    const sets=pathNodeSets(object);sets[pathIndex]=nodes;const changed = { ...object, geometry: { ...object.geometry, nodes:sets[0],...(sets.length>1?{subpaths:sets.slice(1)}:{subpaths:undefined}) } },after=rebaseAfterGeometryChange(object,changed);
     execute(new ReplaceObjectsCommand({ [object.id]: object }, { [object.id]: after }, document.order, document.order)); status = label;
   }
   function nodeSnapReferences(objectId:string,nodeId:string){return document.order.flatMap((id)=>{const candidate=document.objects[id];return candidate?.geometry.kind==='path'?pathNodeSets(candidate).flat().filter((node)=>id!==objectId||node.id!==nodeId).map((node)=>localToWorld(candidate,node.anchor.x,node.anchor.y)):[];});}
@@ -160,7 +155,7 @@
 
   function replaceNode(objectId: string, nodeId: string, update: (node: PathNode) => PathNode) {
     const object = document.objects[objectId]; if (!object || object.geometry.kind !== 'path') return;
-    const sets=pathNodeSets(object).map((nodes)=>nodes.map((node)=>node.id===nodeId?update(node):node));document = { ...document, objects: { ...document.objects, [objectId]: { ...object, geometry: { ...object.geometry, nodes:sets[0],...(sets.length>1?{subpaths:sets.slice(1)}:{subpaths:undefined}) } } } };
+    const sets=pathNodeSets(object).map((nodes)=>nodes.map((node)=>node.id===nodeId?update(node):node)),changed={...object,geometry:{...object.geometry,nodes:sets[0],...(sets.length>1?{subpaths:sets.slice(1)}:{subpaths:undefined})}},after=rebaseAfterGeometryChange(object,changed);document = { ...document, objects: { ...document.objects, [objectId]: after } };
   }
   function resize() {
     const rect = canvas.getBoundingClientRect(), ratio = Math.min(window.devicePixelRatio || 1, 2);
@@ -200,9 +195,9 @@
   function normalizedAngle(angle:number){ while(angle>Math.PI)angle-=Math.PI*2;while(angle<-Math.PI)angle+=Math.PI*2;return angle; }
   function straightEdgeAngles(object:VectorObject){ if(object.geometry.kind==='ellipse')return[]; if(object.geometry.kind==='rect')return[0,Math.PI/2]; const result:number[]=[];for(const[pathIndex,nodes]of pathNodeSets(object).entries())for(let i=0;i<((pathIndex===0?object.geometry.closed:true)?nodes.length:nodes.length-1);i+=1){const a=nodes[i],b=nodes[(i+1)%nodes.length];if(!a.out&&!b.in)result.push(Math.atan2((b.anchor.y-a.anchor.y)*Math.sign(object.transform.scaleY),(b.anchor.x-a.anchor.x)*Math.sign(object.transform.scaleX)));}return result; }
   function snappedRotation(object:VectorObject,raw:number){const threshold=Math.PI/60, cardinal=[0,Math.PI/2,Math.PI,-Math.PI/2], common=Array.from({length:12},(_,i)=>i*Math.PI/6); for(const targets of [cardinal,common])for(const edge of straightEdgeAngles(object))for(const target of targets){const correction=normalizedAngle(target-(raw+edge));if(Math.abs(correction)<threshold)return raw+correction;} const canonical=Math.round(raw/(Math.PI/12))*Math.PI/12;return Math.abs(normalizedAngle(canonical-raw))<threshold?canonical:raw;}
-  function resizeFromMidpoint(object:VectorObject,before:Transform,edge:Edge,world:{x:number;y:number}){
-    if(cornerAnchorMode)return resizeAlongLocalEdge(object,before,edge,world,'bottomRight');
-    if(resizeMode==='edge')return resizeAlongLocalEdge(object,before,edge,world);
+  function resizeFromMidpoint(object:VectorObject,before:Transform,edge:Edge,world:{x:number;y:number},pointerStart:{x:number;y:number}){
+    if(cornerAnchorMode)return resizeAlongLocalEdge(object,before,edge,world,'bottomRight',pointerStart);
+    if(resizeMode==='edge')return resizeAlongLocalEdge(object,before,edge,world,undefined,pointerStart);
     const source={...object,transform:before},b=localBounds(source),local=localCenter(source),center=objectCenter(source),cos=Math.cos(before.rotation),sin=Math.sin(before.rotation),axis=(edge==='left'||edge==='right')?{x:cos,y:sin}:{x:-sin,y:cos},direction=(edge==='left'||edge==='top')?-1:1,dimension=(edge==='left'||edge==='right')?b.width:b.height,sign=(edge==='left'||edge==='right')?Math.sign(before.scaleX)||1:Math.sign(before.scaleY)||1;
     const extent=2*((world.x-center.x)*axis.x*direction+(world.y-center.y)*axis.y*direction),scale=Math.max(.08,Math.max(1,extent)/Math.max(1,dimension));
     const scaleX=edge==='left'||edge==='right'?sign*scale:before.scaleX,scaleY=edge==='top'||edge==='bottom'?sign*scale:before.scaleY;return{...before,scaleX,scaleY,x:center.x-local.x*scaleX,y:center.y-local.y*scaleY};
@@ -246,7 +241,7 @@
   }
 
   const screenToWorld = (x: number, y: number) => ({ x: (x - view.x) / view.scale, y: (y - view.y) / view.scale });
-  function cancelObjectInteraction() { if (nodeDrag) { replaceNode(nodeDrag.objectId,nodeDrag.nodeId,()=>nodeDrag!.before); nodeDrag=null; } if (drag) { if (drag.beforeSelection) { const objects={...document.objects}; for(const id of Object.keys(drag.beforeSelection)) objects[id]={...objects[id],transform:drag.beforeSelection[id]}; document={...document,objects}; } else { const object=document.objects[drag.id]; if(object) document={...document,objects:{...document.objects,[drag.id]:{...object,transform:drag.before}}}; } drag=null; } guides=[]; draw(); }
+  function cancelObjectInteraction() { if (nodeDrag) { document={...document,objects:{...document.objects,[nodeDrag.objectId]:nodeDrag.beforeObject}}; nodeDrag=null; } if (drag) { if (drag.beforeSelection) { const objects={...document.objects}; for(const id of Object.keys(drag.beforeSelection)) objects[id]={...objects[id],transform:drag.beforeSelection[id]}; document={...document,objects}; } else { const object=document.objects[drag.id]; if(object) document={...document,objects:{...document.objects,[drag.id]:{...object,transform:drag.before}}}; } drag=null; } guides=[]; draw(); }
   function pointerDown(event: PointerEvent) {
     canvas.setPointerCapture(event.pointerId); pointers.set(event.pointerId, { x: event.clientX, y: event.clientY });
     if(styleMode){styleMode=false;status='Selection';}
@@ -254,7 +249,7 @@
     const rect = canvas.getBoundingClientRect(), world = screenToWorld(event.clientX - rect.left, event.clientY - rect.top);
     if (editMode && selectedId) {
       const object = document.objects[selectedId]; if (object?.geometry.kind === 'path') { const local = worldToLocal(object, world.x, world.y), radius = 22 / (view.scale * Math.max(.08, Math.min(Math.abs(object.transform.scaleX), Math.abs(object.transform.scaleY))));
-        for (const node of [...pathNodeSets(object).flat()].reverse()) { if (node.id === selectedNodeId) for (const part of ['in', 'out'] as const) { const h = node[part]; if (h && Math.hypot(local.x - node.anchor.x - h.x, local.y - node.anchor.y - h.y) <= radius) { nodeDrag = { objectId: object.id, nodeId: node.id, part, before: node, snapReferences:[] }; return; } } if (Math.hypot(local.x - node.anchor.x, local.y - node.anchor.y) <= radius) { selectedNodeId = node.id; nodeDrag = { objectId: object.id, nodeId: node.id, part: 'anchor', before: node, snapReferences:nodeSnapReferences(object.id,node.id) }; draw(); return; } }
+        for (const node of [...pathNodeSets(object).flat()].reverse()) { if (node.id === selectedNodeId) for (const part of ['in', 'out'] as const) { const h = node[part]; if (h && Math.hypot(local.x - node.anchor.x - h.x, local.y - node.anchor.y - h.y) <= radius) { nodeDrag = { objectId: object.id, nodeId: node.id, part, before: node, beforeObject:object, snapReferences:[] }; return; } } if (Math.hypot(local.x - node.anchor.x, local.y - node.anchor.y) <= radius) { selectedNodeId = node.id; nodeDrag = { objectId: object.id, nodeId: node.id, part: 'anchor', before: node, beforeObject:object, snapReferences:nodeSnapReferences(object.id,node.id) }; draw(); return; } }
         let closest: { pathIndex:number;index:number; t:number;distance:number } | null = null;for(const[pathIndex,nodes]of pathNodeSets(object).entries()){const segments=(pathIndex===0?object.geometry.closed:true)?nodes.length:nodes.length-1;for (let index = 0; index < segments; index += 1) { const candidate = nearestCubicPoint(nodes, index, local); if (!closest || candidate.distance < closest.distance) closest = {pathIndex,index, ...candidate }; }} if (closest && closest.distance <= radius) { selectedSegment = {pathIndex:closest.pathIndex,index: closest.index, t: closest.t }; selectedNodeId = null; status = 'Segment selected'; draw(); return; }
       }
       if(editMode)return;
@@ -264,7 +259,7 @@
       if(selectionLocked()){const hit=[...document.order].reverse().find((id)=>hitTest(document.objects[id],world.x,world.y))??null;if(hit){const selection=selectionForObject(hit);selectedIds=selection;selectedId=hit;status=selection.some((id)=>document.objects[id]?.locked)?'Locked selection':'Selection';draw();return;}}
       if(controls&&selectedIds.length===1&&Math.hypot(world.x-controls.topRight.x,world.y-controls.topRight.y)<=22/view.scale){enterEditMode();return;}
       if(controls&&Math.hypot(world.x-controls.bottomLeft.x,world.y-controls.bottomLeft.y)<=24/view.scale){actionsOpen=!actionsOpen;status=actionsOpen?'Selection actions':'Selection';draw();return;}
-      if(controls&&selectedIds.length===1&&Math.hypot(world.x-controls.topLeft.x,world.y-controls.topLeft.y)<=22/view.scale){drag={id:selectedId,kind:'dimension',before:selectedObject.transform,pivot:origin,startWorldX:world.x,startWorldY:world.y,moved:false};return;}
+      if(controls&&selectedIds.length===1&&Math.hypot(world.x-controls.topLeft.x,world.y-controls.topLeft.y)<=22/view.scale){drag={id:selectedId,kind:cornerAnchorMode?'corner':'dimension',before:selectedObject.transform,pivot:origin,startWorldX:world.x,startWorldY:world.y,moved:false};return;}
       if(controls&&selectedIds.length===1)for(const edge of ['top','right','bottom','left'] as const)if((!cornerAnchorMode||edge==='top'||edge==='left')&&Math.hypot(world.x-controls.midpoints[edge].x,world.y-controls.midpoints[edge].y)<=20/view.scale){drag={id:selectedId,kind:'dimension',before:selectedObject.transform,pivot:origin,startWorldX:world.x,startWorldY:world.y,edge,moved:false};return;}
       const handle=selectionHandle();if(handle&&Math.hypot(world.x-handle.x,world.y-handle.y)<=26/view.scale){orientedControls=true;drag={id:selectedId,kind:'primary',before:selectedObject.transform,beforeSelection:Object.fromEntries(selectedIds.map((id)=>[id,document.objects[id].transform])),pivot:origin,startWorldX:world.x,startWorldY:world.y,startDistance:Math.max(1,Math.hypot(world.x-origin.x,world.y-origin.y)),startAngle:Math.atan2(world.y-origin.y,world.x-origin.x),moved:false};return;}
     }
@@ -285,13 +280,13 @@
     if (drag) { const object = document.objects[drag.id]; let transform: Transform;
       if(drag.kind==='dimension'&&!drag.edge)return;
       if (drag.kind === 'move') { const rawDx=world.x-drag.startWorldX,rawDy=world.y-drag.startWorldY;if(!drag.moved&&!exceedsDragThreshold(rawDx,rawDy,8/view.scale))return;drag.moved=true;const snappedMove = snapMove(rawDx,rawDy,drag.baseBounds); if (drag.beforeSelection && selectedIds.length > 1) { const objects = { ...document.objects }; for (const id of selectedIds) { const before = drag.beforeSelection[id]; objects[id] = { ...objects[id], transform: { ...before, x: before.x + snappedMove.dx, y: before.y + snappedMove.dy } }; } document = { ...document, objects }; draw(); return; } transform = { ...drag.before, x: drag.before.x + snappedMove.dx, y: drag.before.y + snappedMove.dy }; }
-      else { const pivot=drag.pivot??objectCenter({...object,transform:drag.before}),dx=world.x-pivot.x,dy=world.y-pivot.y;drag.moved=drag.moved||Math.hypot(world.x-drag.startWorldX,world.y-drag.startWorldY)>3/view.scale;if(drag.kind==='dimension'&&drag.edge){transform=resizeFromMidpoint(object,drag.before,drag.edge,world);}else{const factor=Math.max(.08,Math.hypot(dx,dy)/(drag.startDistance??1)),rawRotation=drag.before.rotation+Math.atan2(dy,dx)-(drag.startAngle??0),rotationDelta=snappedRotation({...object,transform:drag.before},rawRotation)-drag.before.rotation;if(drag.beforeSelection&&selectedIds.length>1){const objects={...document.objects};for(const id of selectedIds)objects[id]={...objects[id],transform:transformAround(objects[id],drag.beforeSelection[id],pivot,factor,rotationDelta)};document={...document,objects};draw();return;}transform=transformAround(object,drag.before,pivot,factor,rotationDelta);}}
+      else { const pivot=drag.pivot??objectCenter({...object,transform:drag.before}),dx=world.x-pivot.x,dy=world.y-pivot.y,start={x:drag.startWorldX,y:drag.startWorldY};drag.moved=drag.moved||Math.hypot(world.x-drag.startWorldX,world.y-drag.startWorldY)>3/view.scale;if(drag.kind==='corner'){transform=resizeFromLocalCorner(object,drag.before,world,'bottomRight',start);}else if(drag.kind==='dimension'&&drag.edge){transform=resizeFromMidpoint(object,drag.before,drag.edge,world,start);}else{const factor=Math.max(.08,Math.hypot(dx,dy)/(drag.startDistance??1)),rawRotation=drag.before.rotation+Math.atan2(dy,dx)-(drag.startAngle??0),rotationDelta=snappedRotation({...object,transform:drag.before},rawRotation)-drag.before.rotation;if(drag.beforeSelection&&selectedIds.length>1){const objects={...document.objects};for(const id of selectedIds)objects[id]={...objects[id],transform:transformAround(objects[id],drag.beforeSelection[id],pivot,factor,rotationDelta)};document={...document,objects};draw();return;}transform=transformAround(object,drag.before,pivot,factor,rotationDelta);}}
       document = { ...document, objects: { ...document.objects, [drag.id]: { ...object, transform } } }; draw();
     }
   }
   function pointerUp(event: PointerEvent) {
     window.clearTimeout(longPressTimer); pressStart = null; pointers.delete(event.pointerId);if(twoFingerTap&&![...twoFingerTap.ids].some((id)=>pointers.has(id))){const shouldUndo=!twoFingerTap.moved&&performance.now()-twoFingerTap.started<500;twoFingerTap=null;pinch=null;if(shouldUndo){undo();status='Undo';return;}} if (pointers.size < 2) pinch = null; const finishedPan=pan,finishedLasso=lasso; pan = null;lasso=null;guides = [];if(finishedLasso){selectedIds=finishedLasso.ids;selectedId=selectedIds.at(-1)??null;multiMode=false;orientedControls=false;status=selectedIds.length?`${selectedIds.length} selected`:'No objects selected';draw();return;} if(finishedPan&&!finishedPan.moved&&pointers.size===0){if(multiMode){multiMode=false;status='Selection';draw();}else clearSelection();}
-    if (nodeDrag) { const object = document.objects[nodeDrag.objectId], after = object.geometry.kind === 'path' ? pathNodeSets(object).flat().find((node) => node.id === nodeDrag?.nodeId) : undefined; if (after && JSON.stringify(after) !== JSON.stringify(nodeDrag.before)) { const before = nodeDrag.before; replaceNode(nodeDrag.objectId, nodeDrag.nodeId, () => before); execute(new MovePathNodeCommand(nodeDrag.objectId, nodeDrag.nodeId, before, after)); } nodeDrag = null; }
+    if (nodeDrag) { const afterObject=document.objects[nodeDrag.objectId],beforeObject=nodeDrag.beforeObject;if(JSON.stringify(afterObject)!==JSON.stringify(beforeObject)){document={...document,objects:{...document.objects,[nodeDrag.objectId]:beforeObject}};execute(new ReplaceObjectsCommand({[nodeDrag.objectId]:beforeObject},{[nodeDrag.objectId]:afterObject},document.order,document.order));}nodeDrag = null; }
     if (drag) { if(drag.fromOutside&&!drag.moved){drag=null;clearSelection();status='Ready';draw();return;}if(drag.kind==='primary'&&!drag.moved&&selectedIds.length===1){cornerAnchorMode=!cornerAnchorMode;status=cornerAnchorMode?'Corner anchor on':'Corner anchor off';drag=null;draw();return;}if(drag.kind==='dimension'&&!drag.edge&&!drag.moved){resizeMode=resizeMode==='symmetric'?'edge':'symmetric';status=resizeMode==='symmetric'?'Symmetric resize':'Single-edge resize';draw();drag=null;return;} if (drag.beforeSelection && selectedIds.length > 1) { const after = Object.fromEntries(selectedIds.map((id) => [id, document.objects[id]])), before = Object.fromEntries(selectedIds.map((id) => [id, { ...document.objects[id], transform: drag!.beforeSelection![id] }])); document = { ...document, objects: { ...document.objects, ...before } }; execute(new ReplaceObjectsCommand(before, after, document.order, document.order)); } else { const object = document.objects[drag.id]; if (JSON.stringify(object.transform) !== JSON.stringify(drag.before)) { const after = object.transform; document = { ...document, objects: { ...document.objects, [drag.id]: { ...object, transform: drag.before } } }; execute(new TransformObjectCommand(drag.id, drag.before, after)); } } drag = null;draw(); }
   }
   function wheel(event: WheelEvent) { event.preventDefault(); const rect = canvas.getBoundingClientRect(); view = zoomAt(view, { x: event.clientX - rect.left, y: event.clientY - rect.top }, view.scale * Math.exp(-event.deltaY * .001)); viewWasAdjusted = true; draw(); }
